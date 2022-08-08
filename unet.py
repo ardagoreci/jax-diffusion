@@ -3,29 +3,10 @@ Defines the models including the U-Net architecture that will be used for gradua
 of the latent space.
 """
 import jax
-import haiku as hk
 import flax
 from flax import linen as nn
 import jax.numpy as jnp
 from abc import abstractmethod
-
-
-class MNISTClassifier(hk.Module):
-    def __init__(self, images):
-        super().__init__(name='MNISTClassifier')
-        self.flatten = hk.Flatten()
-        self.linear_1 = hk.Linear(300, name='linear_1')
-        self.linear_2 = hk.Linear(100, name='linear_2')
-        self.head = hk.Linear(10, name='head')
-        self.__call__(images)
-
-    def __call__(self, inputs):
-        x = self.flatten(inputs)
-        x = self.linear_1(x)
-        x = jax.nn.relu(x)
-        x = self.linear_2(x)
-        x = jax.nn.relu(x)
-        return self.head(x)
 
 
 class AttentionPool2d(nn.Module):
@@ -61,7 +42,7 @@ class TimeStepEmbedSequential(nn.Sequential, TimeStepBlock):
     """
 
     def __call__(self, x, emb):
-        # TODO: check if this is compatible with Flax
+        # TODO: check if this is compatible with Flax Sequential
         for layer in self:
             if isinstance(layer, TimeStepBlock):
                 x = layer(x, emb)
@@ -164,19 +145,66 @@ class ResBlock(TimeStepBlock):
         ])
 
         self.updown = self.up or self.down  # TODO: be careful with this, don't want any bugs
-        pass
+        # TODO: (1) initialize the upsampling or downsampling layers
+        # TODO: (2) initialize the embedding layers
+        # TODO: (3) initialize the output layers
 
     def __call__(self, x, emb):
+        # TODO: implement the forward pass of ResBlock
         pass
 
 
 class AttentionBlock(nn.Module):
-    pass
+    """
+    An attention block that allows spatial positions to attend to each other.
+
+    channels:
+    num_heads: the number of attention heads
+    num_head_channels:
+    use_new_attention_order:
+    """
+    channels: int
+    num_heads: int = 1
+    num_head_channels: int = -1
+    use_new_attention_order: bool = False
+
+    def setup(self):
+        if self.num_head_channels != -1:
+            # TODO: assert divisibility here
+            self.num_heads = self.channels // self.num_head_channels
+        # TODO: initialize normalization layers
+        # self.norm = normalization(self.channels)
+
+        if self.use_new_attention_order:
+            # TODO: initialize QKVAttention(self.num_heads)
+            pass
+        else:
+            # TODO: initialize QKVAttentionLegacy(self.num_heads)
+            pass
+        # TODO: initialize the self.proj_out layer (don't know yet)
+
+    def __call__(self, x):
+        # TODO: implement the forward pass of the attention block
+        pass
 
 
 class QKVAttentionLegacy(nn.Module):
-    pass
+    """
+    A module which performs QKV attention. Matches legacy QKVAttention + input/ouput heads shaping
+    """
+    num_heads: int
+
+    @nn.compact
+    def __call__(self, qkv):
+        pass
 
 
 class QKVAttention(nn.Module):
-    pass
+    """
+    A module which performs QKV attention and splits in a different order.
+    """
+    num_heads: int
+
+    @nn.compact
+    def __call__(self, qkv):
+        pass
