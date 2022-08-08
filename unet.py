@@ -28,6 +28,7 @@ class TimeStepBlock(nn.Module):
     """
     Any module where __call__ takes timestep embeddings as a second argument.
     """
+
     @abstractmethod
     def __call__(self, x, emb):
         """
@@ -59,23 +60,44 @@ class Upsample(nn.Module):
     use_conv: a bool determining if convolution is applied
     dims: determines if the signal is 1D, 2D, or 3D. If 3D, then
           upsampling occurs in the inner-two dimensions.
+
+    (unit-tested)
     """
     channels: int
     use_conv: bool
     dims: int = 2
     out_channels: int = None
 
-    def setup(self):
-        if self.use_conv:
-            # self.conv = nn.Conv(channels, channels, 3, 1, 1)
-            # TODO: implement convolutional upsampling
-            pass
-        self.out_channels = self.out_channels or self.channels
-
+    @nn.compact
     def __call__(self, x):
         # TODO: implement the interpolation bit here
+
+        if self.dims == 3:
+            (B, D, H, W, C) = x.shape
+            x = jax.image.resize(x, shape=(B, D, H * 2, W * 2, C),
+                                 method='nearest')
+        elif self.dims == 2:
+            (B, H, W, C) = x.shape
+            x = jax.image.resize(x, shape=(B, H * 2, W * 2, C),
+                                 method='nearest')
+        elif self.dims == 1:
+            (B, H, C) = x.shape
+            x = jax.image.resize(x, shape=(B, H * 2, C), method='nearest')
+        else:
+            # TODO: not sure if this method can be handled within Flax.
+            raise ValueError(f"Unsupported dimensions: {self.dims}")
+
         if self.use_conv:
-            x = self.conv(x)
+            channels = self.channels
+            if self.out_channels is not None:
+                channels = self.out_channels  # set the output channels if they are not equal to self.channels
+
+            kernel_length = 3
+            kernel_size = tuple([kernel_length for i in range(self.dims)])
+            x = nn.Conv(features=channels,
+                        kernel_size=kernel_size,
+                        strides=1,
+                        padding='SAME')(x)
         return x
 
 
@@ -96,17 +118,33 @@ class Downsample(nn.Module):
     dims: int = 2
     out_channels: int = None
 
-    def setup(self):
-        self.op = None
-        if self.use_conv:
-            # TODO: self.op = conv(...)
-            pass
-        else:
-            # TODO: self.op = avg_pool(...)
-            pass
-
+    @nn.compact
     def __call__(self, x):
-        return self.op(x)
+        # Determine the number of output channels.
+        if self.out_channels is not None:
+            out_channels = self.out_channels
+        else:
+            out_channels = self.channels
+
+        # If use_conv, use convolution with stride 2.
+        if self.use_conv:
+            kernel_size = tuple([3 for i in range(self.dims)])
+            x = nn.Conv(features=out_channels,
+                        kernel_size=kernel_size,
+                        strides=2,
+                        padding='SAME')(x)
+        else:
+            if self.dims == 1:
+                x = nn.avg_pool(x, window_shape=(2,), strides=(2,))
+            elif self.dims == 2:
+                x = nn.avg_pool(x, window_shape=(2, 2), strides=(2, 2))
+            elif self.dims == 3:
+                x = nn.avg_pool(x,
+                                window_shape=(1, 2, 2),
+                                strides=(1, 2, 2),
+                                padding='SAME')
+
+        return x
 
 
 class ResBlock(TimeStepBlock):
@@ -135,7 +173,7 @@ class ResBlock(TimeStepBlock):
     down: bool = False
 
     def setup(self):
-        self.out_channels = self.out_channels or self.channels
+        self.out_channels = self.out_channels or self.channels  # TODO: this will not be allowed in Flax!
 
         self.in_layers = nn.Sequential([
             # TODO: implement the input layers here
