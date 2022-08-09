@@ -128,11 +128,22 @@ class Downsample(nn.Module):
 
         # If use_conv, use convolution with stride 2.
         if self.use_conv:
-            kernel_size = tuple([3 for i in range(self.dims)])
-            x = nn.Conv(features=out_channels,
-                        kernel_size=kernel_size,
-                        strides=2,
-                        padding='SAME')(x)
+            kernel_size = tuple([3 for i in range(self.dims)])  # 3x3 convolution for 2D, 3x3x3 convolution for 3D
+            # There is an edge-case with 3D convolutions.
+            if self.dims == 3:
+                x = nn.Conv(features=out_channels,
+                            kernel_size=kernel_size,
+                            strides=(1, 2, 2),  # Keeps the spatial dimensions the same
+                            padding='SAME')(x)
+
+            elif self.dims == 2 or self.dims == 1:
+                x = nn.Conv(features=out_channels,
+                            kernel_size=kernel_size,
+                            strides=2,
+                            padding='SAME')(x)
+            else:
+                raise ValueError(f"Unsupported dimensions: {self.dims}")
+
         else:
             if self.dims == 1:
                 x = nn.avg_pool(x, window_shape=(2,), strides=(2,))
