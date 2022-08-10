@@ -4,6 +4,7 @@ of the latent space.
 """
 import jax
 import flax
+from nn import normalization
 from flax import linen as nn
 import jax.numpy as jnp
 from abc import abstractmethod
@@ -70,8 +71,6 @@ class Upsample(nn.Module):
 
     @nn.compact
     def __call__(self, x):
-        # TODO: implement the interpolation bit here
-
         if self.dims == 3:
             (B, D, H, W, C) = x.shape
             x = jax.image.resize(x, shape=(B, D, H * 2, W * 2, C),
@@ -84,7 +83,6 @@ class Upsample(nn.Module):
             (B, H, C) = x.shape
             x = jax.image.resize(x, shape=(B, H * 2, C), method='nearest')
         else:
-            # TODO: not sure if this method can be handled within Flax.
             raise ValueError(f"Unsupported dimensions: {self.dims}")
 
         if self.use_conv:
@@ -112,6 +110,8 @@ class Downsample(nn.Module):
 
     (if use_conv, the method performs a convolutional downsampling using strides.
     else, it performs an average pooling downsampling.)
+
+    (unit-tested)
     """
     channels: int
     use_conv: bool
@@ -207,53 +207,122 @@ class AttentionBlock(nn.Module):
     """
     An attention block that allows spatial positions to attend to each other.
 
-    channels:
+    channels: the number of input channels
     num_heads: the number of attention heads
     num_head_channels:
     use_new_attention_order:
+
     """
     channels: int
     num_heads: int = 1
     num_head_channels: int = -1
     use_new_attention_order: bool = False
 
-    def setup(self):
-        if self.num_head_channels != -1:
-            # TODO: assert divisibility here
-            self.num_heads = self.channels // self.num_head_channels
-        # TODO: initialize normalization layers
-        # self.norm = normalization(self.channels)
-
-        if self.use_new_attention_order:
-            # TODO: initialize QKVAttention(self.num_heads)
-            pass
-        else:
-            # TODO: initialize QKVAttentionLegacy(self.num_heads)
-            pass
-        # TODO: initialize the self.proj_out layer (don't know yet)
-
+    @nn.compact
     def __call__(self, x):
-        # TODO: implement the forward pass of the attention block
-        pass
+        B, *spatial, C = x.shape  # get dimensions
+        # flatten x
+        x = jnp.reshape(x, (B, -1, C))
+        # normalize
+        h = normalization(C)(x)
+        # convolve to get qkv
+        qkv = nn.Conv(features=self.num_heads * self.channels * 3,  # Getting the qkv tensor for multi-head attention
+                      kernel_size=1)(h)
+        # attention
+        h = QKVAttention(self.num_heads)(qkv)
+        # transpose to (B, d_model, C)
+        h = h.transpose((0, 2, 1))  # getting channels last for convolutions
+        # projection layer
+        h = (nn.Conv(features=self.channels, kernel_size=1))(h)  # TODO: there is supposed to be a ZeroModule here
+        # Ho et al. have not employed such a zero module, I suspect it is to make this layer a purely skip connection
+        # at initialization - only later do the layers diverge from zero.
+
+        # residual connection and reshape to original shape
+        return (x + h).reshape(B, *spatial, C)
 
 
 class QKVAttentionLegacy(nn.Module):
     """
-    A module which performs QKV attention. Matches legacy QKVAttention + input/ouput heads shaping
+    A module which performs QKV attention. Matches legacy QKVAttention + input/output heads shaping
     """
     num_heads: int
 
     @nn.compact
-    def __call__(self, qkv):
+    def __call__(self, q, k, v):
         pass
 
 
 class QKVAttention(nn.Module):
     """
     A module which performs QKV attention and splits in a different order.
+
+    Note: I do not understand the need for two different attention modules.
+    This might be avoided upstream by using better array handling.
+
+    TODO: this class can only handle num_heads = 1 for now!
+    The issue is that I have not found a way to get the value vector to be of shape
+    (H, T, d_model / H) for H > 1. If this is the case, the class will return a
+    value tensor that is enlarged to (T, d_model*H) - this may cause problems downstream.
     """
-    num_heads: int
+    num_heads: int = 1
 
     @nn.compact
     def __call__(self, qkv):
-        pass
+        """
+        Args:
+            qkv: the combined query key value tensor of shape (B, d_model, num_heads * T * 3)
+        Returns:
+            a value tensor of shape (B, T, d_model)
+        """
+        # Shape wrangling
+        B, d_model, product = qkv.shape
+        T = product // (self.num_heads * 3)
+        qkv = qkv.reshape((B, d_model, self.num_heads, T, 3))  # (B, d_model, num_heads, T, 3)
+        qkv = qkv.transpose((0, 4, 2, 3, 1))  # (B, 3, num_heads, T, d_model)
+        q, k, v = jnp.split(qkv, 3, axis=1)
+        q = jnp.squeeze(q, axis=1)  # remove unnecessary dimension
+        k = jnp.squeeze(k, axis=1)
+        v = jnp.squeeze(v, axis=1)
+
+        # Attention
+        return jax.vmap(self._forward)(q, k, v)
+
+    def _forward(self, q, k, v) -> jnp.ndarray:
+        """
+        Args:
+            q: the query tensor (H, T, d_model)
+            k: the key tensor (H, T, d_model)
+            v: the value tensor (H, T, d_model / H)
+        where H is the number of heads, T is the number of elements that attend to each other
+        and C is d_model
+        Returns: a value tensor of shape (T, d_model) after attention
+
+        This function does not take into account the batch dimension. It will be vmap
+        transformed to do so.
+        (unit-tested)
+        """
+        headed_v = jax.vmap(self.scaled_dot_product_attention)(q, k, v)  # (H, T, d_model/num_heads)
+        # Merge the heads to recover v with dims (T, d_model).
+        v_prime = jnp.concatenate(headed_v, axis=-1)  # (T, d_model)
+        return v_prime
+
+    @staticmethod
+    def scaled_dot_product_attention(q, k, v) -> jnp.ndarray:
+        """
+        Args:
+            q: the query tensor (T, d_model)
+            k: the key tensor (T, d_model)
+            v: the value tensor (T, d_model / num_heads)
+        Returns: a tensor of shape (T, d_model / num_heads) after scaled dot product attention
+
+        This function will be vmap transformed in order to apply it as a multi-head
+        attention mechanism.
+        (unit-tested)
+        """
+        # Get dimensions.
+        elements, d_model = q.shape
+        scale_factor = jnp.sqrt(d_model)  # scaling factor for scaled attention
+        weight_logits = jnp.matmul(q, k.T) / scale_factor  # Compute Q*K.T / sqrt(d_model)
+        attention_weights = jax.nn.softmax(weight_logits, axis=-1)  # (T, T)
+        attention_v = jnp.matmul(attention_weights, v)  # (T, d_model / num_heads)
+        return attention_v

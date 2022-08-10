@@ -1,6 +1,11 @@
 """
 Various utilities for neural networks.
 """
+from flax import linen as nn
+
+
+def normalization(channels):
+    return nn.GroupNorm(num_groups=32, group_size=channels)
 
 
 def conv_nd(dims, *args, **kwargs):
