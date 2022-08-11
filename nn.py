@@ -12,7 +12,7 @@ def normalization(channels):
     return nn.GroupNorm(num_groups=None, group_size=channels)
 
 
-def conv_nd(dims, *args, **kwargs):
+def conv_nd(dims, kernel_size, *args, **kwargs):
     """
     Create a 1D, 2D, or 3D convolutional module.
     """

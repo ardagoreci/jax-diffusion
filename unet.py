@@ -179,13 +179,17 @@ class ResBlock(TimeStepBlock):
               channels in the skip connection.
     out_channels: if specified, the number of out channels
     dims: determines if the signal is 1D, 2D, or 3D.
-    use_checkpoint: if True, use gradient checkpointing on this module
+    use_scale_shift_norm: # TODO: not implemented yet!
     up: if True, use this block for upsampling
     down: if True, use this block for downsampling
+
+    TODO: the current version of the ResBlock does not handle scale_shift_norm
+
+    (unit-tested)
     """
     channels: int
     emb_channels: int
-    dropout: float
+    dropout: float = 0.0
     out_channels: int = None
     use_conv: bool = True
     dims: int = 2
@@ -194,33 +198,41 @@ class ResBlock(TimeStepBlock):
     down: bool = False
 
     def setup(self):
-        self.out_channels = self.out_channels or self.channels  # TODO: this will not be allowed in Flax!
+        out_channels = self.out_channels or self.channels
 
-        self.in_layers = nn.Sequential([
-            # normalization(channels),
-            # nn.SiLU(),
-            # conv_nd(dims, channels, self.out_channels, 3, padding=1)
+        # in_rest and in_conv form the in_layers, but they need to be separate
+        self.in_rest = nn.Sequential([
+            normalization(self.channels),
+            jax.nn.silu,
         ])
+        self.in_conv = nn.Conv(features=out_channels,
+                               kernel_size=tuple([3 for i in range(self.dims)]),
+                               padding='SAME')
 
         self.updown = self.up or self.down  # whether to upsample or downsample
-        # TODO: (1) initialize the upsampling or downsampling layers
-        if self.up:
-            pass
-        elif self.down:
-            pass
-        else:
-            pass
 
-        # TODO: (2) initialize the embedding layers
+        # (1) initialize the upsampling or downsampling layers
+        if self.up:
+            self.h_upd = Upsample(self.channels, use_conv=False, dims=self.dims)
+            self.x_upd = Upsample(self.channels, use_conv=False, dims=self.dims)
+        elif self.down:
+            self.h_upd = Downsample(self.channels, use_conv=False, dims=self.dims)
+            self.x_upd = Downsample(self.channels, use_conv=False, dims=self.dims)
+        else:
+            self.h_upd = Identity()
+            self.x_upd = Identity()
+
+        # (2) initialize the embedding layers
         self.emb_layers = nn.Sequential([
             jax.nn.silu,
             nn.Dense(features=(
-                2 * self.out_channels if self.use_scale_shift_norm else self.out_channels)
+                2 * out_channels if self.use_scale_shift_norm else out_channels)
             )
         ])
-        # TODO: (3) initialize the output layers
+
+        # (3) initialize the output layers
         self.out_layers = nn.Sequential([
-            normalization(self.out_channels),
+            normalization(out_channels),
             jax.nn.silu,
             nn.Dropout(self.dropout),
             nn.Conv(features=self.out_channels,
@@ -229,17 +241,42 @@ class ResBlock(TimeStepBlock):
         ])
 
         # Skip connection logic
-
+        if out_channels == self.channels:
+            self.skip_connection = Identity()
+        elif self.use_conv:
+            # self.skip_connection = nn.Conv()
+            self.skip_connection = nn.Conv(features=out_channels,
+                                           kernel_size=tuple([3 for i in range(self.dims)]),
+                                           padding='SAME')
+        else:
+            # If not using convolution, use a 1x1 conv to get the output channels right.
+            self.skip_connection = nn.Conv(features=out_channels,
+                                           kernel_size=tuple([1 for i in range(self.dims)]),
+                                           padding='SAME')
 
     def __call__(self, x, emb):
-        # TODO: implement the forward pass of ResBlock
-
         # (1) if up or downsample, use the upsampling or downsampling layers (apply the convolution in in_layers after
-        # the op). Otherwise, apply in_layers directly.
-        # (2) strange embedding layers logic
+        # the op). Otherwise, apply in_rest and in_conv directly.
+        if self.updown:
+            h = self.in_rest(x)
+            h = self.h_upd(h)
+            x = self.x_upd(x)
+            h = self.in_conv(h)
+        else:
+            h = self.in_rest(x)
+            h = self.in_conv(h)
+
+        # (2) embedding layers logic
+        emb_out = self.emb_layers(emb)
+
         # (3) scale shift norm ? (else, add the timestep embedding and pass it through the output layers)
+        if self.use_scale_shift_norm:
+            raise NotImplementedError("scale-shift normalization not implemented")
+        else:
+            h = h + emb_out
+            h = self.out_layers(h)
         # (4) residual with the skip connection, return sum.
-        pass
+        return self.skip_connection(x) + h
 
     class UNetModel(nn.Module):
         """
@@ -315,10 +352,8 @@ class AttentionBlock(nn.Module):
 
     channels: the number of input channels
     num_heads: the number of attention heads
-    num_head_channels:
+    num_head_channels: the number of channels per attention head
     use_new_attention_order:
-
-    It must be generalized to the multi-head case.
 
     """
     channels: int
@@ -328,16 +363,22 @@ class AttentionBlock(nn.Module):
 
     @nn.compact
     def __call__(self, x):
+        # Compute num_heads
+        if self.num_head_channels == -1:
+            num_heads = self.num_heads
+        else:
+            num_heads = self.channels // self.num_head_channels
+
         B, *spatial, C = x.shape  # get dimensions
         # flatten x
         x = jnp.reshape(x, (B, -1, C))
         # normalize
         h = normalization(C)(x)
         # convolve to get qkv
-        qkv = nn.Conv(features=self.num_heads * self.channels * 3,  # Getting the qkv tensor for multi-head attention
+        qkv = nn.Conv(features=num_heads * self.channels * 3,  # Getting the qkv tensor for multi-head attention
                       kernel_size=1)(h)
         # attention
-        h = QKVAttention(self.num_heads)(qkv)
+        h = QKVAttention(num_heads)(qkv)
         # transpose to (B, d_model, C)
         h = h.transpose((0, 2, 1))  # getting channels last for convolutions
         # projection layer
@@ -389,9 +430,10 @@ class QKVAttention(nn.Module):
         v = jnp.squeeze(v, axis=1)
 
         # Attention
-        return jax.vmap(self._forward)(q, k, v)
+        return jax.vmap(QKVAttention._forward)(q, k, v)
 
-    def _forward(self, q, k, v) -> jnp.ndarray:
+    @staticmethod
+    def _forward(q, k, v) -> jnp.ndarray:
         """
         Args:
             q: the query tensor (H, T, d_model)
@@ -406,7 +448,7 @@ class QKVAttention(nn.Module):
         transformed to do so.
         (unit-tested)
         """
-        headed_v = jax.vmap(self.scaled_dot_product_attention)(q, k, v)  # (H, T, d_model/num_heads)
+        headed_v = jax.vmap(QKVAttention.scaled_dot_product_attention)(q, k, v)  # (H, T, d_model/num_heads)
         # Merge the heads to recover v with dims (T, d_model).
         v_prime = jnp.concatenate(headed_v, axis=0)  # (T * num_heads, d_model)
         return v_prime
