@@ -8,6 +8,7 @@ from nn import normalization
 from flax import linen as nn
 import jax.numpy as jnp
 from abc import abstractmethod
+from typing import Collection
 
 
 class AttentionPool2d(nn.Module):
@@ -158,6 +159,15 @@ class Downsample(nn.Module):
         return x
 
 
+class Identity(nn.Module):
+    """
+    A utility module that simply returns the input.
+    """
+    @nn.compact
+    def __call__(self, x):
+        return x
+
+
 class ResBlock(TimeStepBlock):
     """
     A residual block that can optionally change the number of channels.
@@ -187,20 +197,116 @@ class ResBlock(TimeStepBlock):
         self.out_channels = self.out_channels or self.channels  # TODO: this will not be allowed in Flax!
 
         self.in_layers = nn.Sequential([
-            # TODO: implement the input layers here
             # normalization(channels),
             # nn.SiLU(),
             # conv_nd(dims, channels, self.out_channels, 3, padding=1)
         ])
 
-        self.updown = self.up or self.down  # TODO: be careful with this, don't want any bugs
+        self.updown = self.up or self.down  # whether to upsample or downsample
         # TODO: (1) initialize the upsampling or downsampling layers
+        if self.up:
+            pass
+        elif self.down:
+            pass
+        else:
+            pass
+
         # TODO: (2) initialize the embedding layers
+        self.emb_layers = nn.Sequential([
+            jax.nn.silu,
+            nn.Dense(features=(
+                2 * self.out_channels if self.use_scale_shift_norm else self.out_channels)
+            )
+        ])
         # TODO: (3) initialize the output layers
+        self.out_layers = nn.Sequential([
+            normalization(self.out_channels),
+            jax.nn.silu,
+            nn.Dropout(self.dropout),
+            nn.Conv(features=self.out_channels,
+                    kernel_size=tuple([3 for i in range(self.dims)]),
+                    padding='SAME')
+        ])
+
+        # Skip connection logic
+
 
     def __call__(self, x, emb):
         # TODO: implement the forward pass of ResBlock
+
+        # (1) if up or downsample, use the upsampling or downsampling layers (apply the convolution in in_layers after
+        # the op). Otherwise, apply in_layers directly.
+        # (2) strange embedding layers logic
+        # (3) scale shift norm ? (else, add the timestep embedding and pass it through the output layers)
+        # (4) residual with the skip connection, return sum.
         pass
+
+    class UNetModel(nn.Module):
+        """
+        The full UNet model with attention and timestep embedding.
+        in_channels: channels in the input Tensor.
+        model_channels: base channel count for the model.
+        out_channels: channels in the output Tensor.
+        num_res_blocks: number of residual blocks per downsample.
+        attention_resolutions: a collection of downsample rates at which
+            attention will take place. May be a set, list, or tuple.
+            For example, if this contains 4, then at 4x downsampling, attention
+            will be used.
+        dropout: the dropout probability.
+        channel_mult: channel multiplier for each level of the UNet.
+        conv_resample: if True, use learned convolutions for upsampling and downsampling.
+        dims: determines if the signal is 1D, 2D, or 3D.
+        num_heads: the number of attention heads in each attention layer.
+        num_heads_channels: if specified, ignore num_heads and instead use
+                            a fixed channel width per attention head.
+        num_heads_upsample: works with num_heads to set a different number
+                            of heads for upsampling. Deprecated.
+        use_scale_shift_norm: use a FiLM-like conditioning mechanism.
+        resblock_updown: use residual blocks for up/downsampling.
+        use_new_attention_order: use a different attention pattern for potentially
+                                 increased efficiency.
+
+        Deleted pieces:
+        - checkpointing
+        - num_classes (not planning on doing class-conditional generation)
+        """
+        in_channels: int
+        model_channels: int
+        out_channels: int
+        num_res_blocks: int
+        attention_resolutions: Collection[int]
+        dropout: float = 0.0
+        channel_mult: Collection[int] = (1, 2, 4, 8)
+        conv_resample: bool = True
+        dims: int = 2
+        num_heads: int = 1
+        num_heads_channels: int = -1
+        num_heads_upsample: int = -1
+        use_scale_shift_norm: bool = False
+        resblock_updown: bool = False
+        use_new_attention_order: bool = False
+
+        def setup(self):
+            time_embed_dim = self.model_channels * 4
+            self.time_embed = nn.Sequential([
+                nn.Dense(time_embed_dim),
+                jax.nn.silu,
+                nn.Dense(time_embed_dim),
+            ])  # projects model_channel to size 4 * model_channel
+
+            ch = input_ch = int(self.channel_mult[0] * self.model_channels)
+
+            # self.input_blocks = [TimeStepEmbedSequential()]
+            pass
+
+        def __call__(self):
+            # Input blocks
+            # Middle block
+            #     - resnet block
+            #     - attention
+            #     - resnet block
+            # Output blocks
+            pass
 
 
 class AttentionBlock(nn.Module):
@@ -211,6 +317,8 @@ class AttentionBlock(nn.Module):
     num_heads: the number of attention heads
     num_head_channels:
     use_new_attention_order:
+
+    It must be generalized to the multi-head case.
 
     """
     channels: int
@@ -233,7 +341,8 @@ class AttentionBlock(nn.Module):
         # transpose to (B, d_model, C)
         h = h.transpose((0, 2, 1))  # getting channels last for convolutions
         # projection layer
-        h = (nn.Conv(features=self.channels, kernel_size=1))(h)  # TODO: there is supposed to be a ZeroModule here
+        h = (nn.Conv(features=self.channels, kernel_size=1))(h)  # convolutional layer to get the value channels back to
+        # the original size. Thus, things do not explode with increased number of heads.
         # Ho et al. have not employed such a zero module, I suspect it is to make this layer a purely skip connection
         # at initialization - only later do the layers diverge from zero.
 
@@ -258,11 +367,6 @@ class QKVAttention(nn.Module):
 
     Note: I do not understand the need for two different attention modules.
     This might be avoided upstream by using better array handling.
-
-    TODO: this class can only handle num_heads = 1 for now!
-    The issue is that I have not found a way to get the value vector to be of shape
-    (H, T, d_model / H) for H > 1. If this is the case, the class will return a
-    value tensor that is enlarged to (T, d_model*H) - this may cause problems downstream.
     """
     num_heads: int = 1
 
@@ -292,10 +396,11 @@ class QKVAttention(nn.Module):
         Args:
             q: the query tensor (H, T, d_model)
             k: the key tensor (H, T, d_model)
-            v: the value tensor (H, T, d_model / H)
+            v: the value tensor (H, T, d_model)
         where H is the number of heads, T is the number of elements that attend to each other
         and C is d_model
-        Returns: a value tensor of shape (T, d_model) after attention
+        Returns: a value tensor of shape (T * H, d_model) after attention. This tensor will be
+        convolved with a 1x1 convolutional layer to recover the original shape (T, d_model) upstream.
 
         This function does not take into account the batch dimension. It will be vmap
         transformed to do so.
@@ -303,7 +408,7 @@ class QKVAttention(nn.Module):
         """
         headed_v = jax.vmap(self.scaled_dot_product_attention)(q, k, v)  # (H, T, d_model/num_heads)
         # Merge the heads to recover v with dims (T, d_model).
-        v_prime = jnp.concatenate(headed_v, axis=-1)  # (T, d_model)
+        v_prime = jnp.concatenate(headed_v, axis=0)  # (T * num_heads, d_model)
         return v_prime
 
     @staticmethod

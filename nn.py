@@ -5,7 +5,11 @@ from flax import linen as nn
 
 
 def normalization(channels):
-    return nn.GroupNorm(num_groups=32, group_size=channels)
+    """
+    Create a normalization layer.
+    TODO: unit-test this layer. (I don't know what it is doing.)
+    """
+    return nn.GroupNorm(num_groups=None, group_size=channels)
 
 
 def conv_nd(dims, *args, **kwargs):
