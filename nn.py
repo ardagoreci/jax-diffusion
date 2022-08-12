@@ -2,6 +2,8 @@
 Various utilities for neural networks.
 """
 from flax import linen as nn
+import jax
+import jax.numpy as jnp
 
 
 def normalization(channels):
@@ -55,5 +57,10 @@ def timestep_embedding(timesteps, dim, max_period=10000):
     Returns:
         a Tensor of shape (N, dim) of positional embeddings
     """
-    # TODO: implement timestep_embeddings
-    pass
+    half = dim // 2
+    freqs = jnp.exp(-jnp.log(max_period) * jnp.arange(0, half, dtype=jnp.float32) / half)
+    args = timesteps[:, None] * freqs[None]
+    embedding = jnp.concatenate([jnp.cos(args), jnp.sin(args)], axis=-1)
+    if dim % 2 == 0:
+        embedding = jnp.concatenate([embedding, jnp.zeros_like(embedding[:, :1])], axis=-1)
+    return embedding

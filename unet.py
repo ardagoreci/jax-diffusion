@@ -4,7 +4,7 @@ of the latent space.
 """
 import jax
 import flax
-from nn import normalization
+from nn import normalization, timestep_embedding
 from flax import linen as nn
 import jax.numpy as jnp
 from abc import abstractmethod
@@ -14,7 +14,7 @@ from typing import Collection
 class AttentionPool2d(nn.Module):
     spacial_dim: int
     embed_dim: int
-    num_heads_channels: int
+    num_head_channels: int
     output_dim: int = None
 
     def setup(self):
@@ -45,8 +45,7 @@ class TimeStepEmbedSequential(nn.Sequential, TimeStepBlock):
     """
 
     def __call__(self, x, emb):
-        # TODO: check if this is compatible with Flax Sequential
-        for layer in self:
+        for layer in self.layers:
             if isinstance(layer, TimeStepBlock):
                 x = layer(x, emb)
             else:
@@ -208,9 +207,7 @@ class ResBlock(TimeStepBlock):
         self.in_conv = nn.Conv(features=out_channels,
                                kernel_size=tuple([3 for i in range(self.dims)]),
                                padding='SAME')
-
         self.updown = self.up or self.down  # whether to upsample or downsample
-
         # (1) initialize the upsampling or downsampling layers
         if self.up:
             self.h_upd = Upsample(self.channels, use_conv=False, dims=self.dims)
@@ -235,7 +232,7 @@ class ResBlock(TimeStepBlock):
             normalization(out_channels),
             jax.nn.silu,
             nn.Dropout(self.dropout),
-            nn.Conv(features=self.out_channels,
+            nn.Conv(features=out_channels,
                     kernel_size=tuple([3 for i in range(self.dims)]),
                     padding='SAME')
         ])
@@ -294,7 +291,7 @@ class ResBlock(TimeStepBlock):
         conv_resample: if True, use learned convolutions for upsampling and downsampling.
         dims: determines if the signal is 1D, 2D, or 3D.
         num_heads: the number of attention heads in each attention layer.
-        num_heads_channels: if specified, ignore num_heads and instead use
+        num_head_channels: if specified, ignore num_heads and instead use
                             a fixed channel width per attention head.
         num_heads_upsample: works with num_heads to set a different number
                             of heads for upsampling. Deprecated.
@@ -317,7 +314,7 @@ class ResBlock(TimeStepBlock):
         conv_resample: bool = True
         dims: int = 2
         num_heads: int = 1
-        num_heads_channels: int = -1
+        num_head_channels: int = -1
         num_heads_upsample: int = -1
         use_scale_shift_norm: bool = False
         resblock_updown: bool = False
@@ -333,17 +330,150 @@ class ResBlock(TimeStepBlock):
 
             ch = input_ch = int(self.channel_mult[0] * self.model_channels)
 
-            # self.input_blocks = [TimeStepEmbedSequential()]
-            pass
+            # 1st element of input_blocks: a convolution with output channels equal to ch
+            self.input_blocks = [nn.Conv(features=ch, kernel_size=tuple([3 for i in range(self.dims)]), padding='SAME')]
+            self._feature_size = ch
 
-        def __call__(self):
-            # Input blocks
-            # Middle block
-            #     - resnet block
-            #     - attention
-            #     - resnet block
-            # Output blocks
-            pass
+            # Add the channels to a list input_block_channels
+            input_block_channels = [ch]
+            ds = 1
+
+            # Enumerate channel_mult to (level, mult)
+            #    for _ in range(self.num_res_blocks):
+            #       Add a residual block to input blocks
+            #       Check attention_resolutions, if this res is in it, add an attention block as well
+            #       Add ch = int(mult * model_channels) to input_block_channels
+            #    endfor
+            #    if level != len(channel_mult) - 1:   (meaning if we are not at the end of the channel_mult list)
+            #      add a downsampling residual block, (or a simple Downsample if resblock_updown is False)
+            #    update ds, ch, and self.feature_size
+            for level, mult in enumerate(self.channel_mult):
+                for _ in range(self.num_res_blocks):
+                    layers = [
+                        ResBlock(channels=ch,
+                                 emb_channels=time_embed_dim,
+                                 dropout=self.dropout,
+                                 out_channels=int(mult * self.model_channels),  # double channels with each halving of
+                                 # resolution
+                                 )
+                    ]
+                    ch = int(mult * self.model_channels)  # set channels to the output of ResBlock for the attention
+                    # (or next iteration)
+                    if ds in self.attention_resolutions:
+                        layers.append(
+                            AttentionBlock(channels=ch,
+                                           num_heads=self.num_heads,
+                                           num_head_channels=self.num_head_channels)
+                        )
+                    self.input_blocks.append(TimeStepEmbedSequential(*layers))  # make everything into a nn.Sequential
+                    self._feature_size += ch
+                    input_block_channels.append(ch)
+                    # ends inner for
+                if level != len(self.channel_mult) - 1:
+                    out_ch = ch
+                    if self.resblock_updown:
+                        self.input_blocks.append(
+                            ResBlock(channels=ch,
+                                     emb_channels=time_embed_dim,
+                                     dropout=self.dropout,
+                                     out_channels=out_ch,
+                                     down=True)
+                        )
+                    else:
+                        self.input_blocks.append(Downsample(channels=ch,
+                                                            use_conv=self.conv_resample,
+                                                            dims=self.dims,
+                                                            out_channels=out_ch))
+                    ch = out_ch  # required for the next run of the for loop
+                    input_block_channels.append(ch)
+                    ds *= 2
+                    self._feature_size += ch
+
+            # Middle Block consists of:
+            # - ResBlock
+            # - AttentionBlock
+            # - ResBlock
+            self.middle_block = TimeStepEmbedSequential([
+                ResBlock(channels=ch,
+                         emb_channels=time_embed_dim,
+                         dropout=self.dropout,
+                         out_channels=out_ch),
+                AttentionBlock(channels=ch,
+                               num_heads=self.num_heads,
+                               num_head_channels=self.num_head_channels),
+                ResBlock(channels=ch,
+                         emb_channels=time_embed_dim,
+                         dropout=self.dropout,
+                         out_channels=out_ch)
+            ])
+            self._feature_size += ch
+
+            # Output Block
+            # do the same logic as the input layers, only in reverse
+            self.output_blocks = []
+            for level, mult in reversed(list(enumerate(self.channel_mult))):
+                for i in range(self.num_res_blocks + 1):
+                    ich = input_block_channels.pop()
+                    layers = [
+                        ResBlock(channels=ich + ch,
+                                 emb_channels=time_embed_dim,
+                                 dropout=self.dropout,
+                                 out_channels=int(mult * self.model_channels),
+                                 dims=self.dims)
+                    ]
+                    ch = int(mult * self.model_channels)
+                    if ds in self.attention_resolutions:
+                        layers.append(AttentionBlock(channels=ch,
+                                                     num_heads=self.num_heads,
+                                                     num_head_channels=self.num_head_channels))
+                    if level and i == self.num_res_blocks:
+                        out_ch = ch
+                        if self.resblock_updown:
+                            layers.append(
+                                ResBlock(channels=ch,
+                                         emb_channels=time_embed_dim,
+                                         dropout=self.dropout,
+                                         out_channels=out_ch,
+                                         up=True)
+                            )
+                        else:
+                            layers.append(Upsample(channels=ch,
+                                                   use_conv=self.conv_resample,
+                                                   dims=self.dims,
+                                                   out_channels=out_ch))
+                        ds //= 2
+                    self.output_blocks.append(TimeStepEmbedSequential(*layers))
+                    self._feature_size += ch
+
+            # Final Output
+            self.out = nn.Sequential([
+                normalization(ch),
+                jax.nn.silu,
+                nn.Conv(features=out_ch,
+                        kernel_size=tuple([3 for i in range(self.dims)]),
+                        padding='SAME'),
+            ])
+
+        def __call__(self, x, timesteps):
+            """
+            Args:
+                x: [N x ... (spatial dims)] Tensor of inputs
+                timesteps: a 1D batch of timesteps
+            Returns: [N x ... (spatial dims)] Tensor of outputs
+            """
+            # Required in the symmetric skip connections.
+            hs = []
+            # Timestep embeddings
+            emb = self.time_embed(timestep_embedding(timesteps))  # (N, time_embed_dim)
+            h = x
+            for module in self.input_blocks:
+                h = module(h, emb)
+                hs.append(h)
+            h = self.middle_block(h, emb)
+            for module in self.output_blocks:
+                h = jnp.concatenate([h, hs.pop()], axis=1)
+                h = module(h, emb)
+            return self.out(h)
 
 
 class AttentionBlock(nn.Module):
