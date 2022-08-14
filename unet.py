@@ -181,6 +181,8 @@ class ResBlock(TimeStepBlock):
     use_checkpoint: if True, use gradient checkpointing on this module
     up: if True, use this block for upsampling
     down: if True, use this block for downsampling
+
+    (unit-tested)
     """
     channels: int
     emb_channels: int
