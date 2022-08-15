@@ -522,7 +522,7 @@ class AttentionBlock(nn.Module):
         h = normalization(C)(x)
         # convolve to get qkv
         qkv = nn.Conv(features=num_heads * self.channels * 3,  # Getting the qkv tensor for multi-head attention
-                      kernel_size=1)(h)
+                      kernel_size=(1,))(h)
         # attention
         h = QKVAttention(num_heads)(qkv)
         # transpose to (B, d_model, C)
