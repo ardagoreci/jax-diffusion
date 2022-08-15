@@ -254,11 +254,12 @@ def train_and_evaluate(config: ml_collections.ConfigDict,
             train_metrics.append(metrics)
             if (step + 1) % config.log_every_n_steps == 0:
                 print(f"train_metrics length: {len(train_metrics)} at step: {step}")
-                train_metrics = common_utils.get_metrics(train_metrics)
-                summary = {
-                    f'train_{k}': v
-                    for k, v in jax.tree_util.tree_map(lambda x: x.mean(), train_metrics).items()
-                }
+                # train_metrics = common_utils.get_metrics(train_metrics)
+                #summary = {
+                #    f'train_{k}': v
+                #    for k, v in jax.tree_util.tree_map(lambda x: x.mean(), train_metrics).items()
+                #}
+                print(train_metrics)
                 summary['steps_per_second'] = config.log_every_n_steps / (
                         time.time() - train_metrics_last_t)
                 writer.write_scalars(step + 1, summary)
@@ -273,7 +274,7 @@ def train_and_evaluate(config: ml_collections.ConfigDict,
                     eval_batch = next(test_iter)
                     metrics = p_eval_step(state, eval_batch)
                     eval_metrics.append(metrics)
-                eval_metrics = common_utils.get_metrics(eval_metrics)
+                # eval_metrics = common_utils.get_metrics(eval_metrics)
                 summary = jax.tree_util.tree_map(lambda x: x.mean(), eval_metrics)
                 logging.info('eval epoch: %d, loss: %.4f',
                              epoch, summary['loss'])
