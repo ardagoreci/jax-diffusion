@@ -29,6 +29,7 @@ def create_unet(config):
     """Creates and initializes the UNet model."""
     model = unet.UNetModel(in_channels=config.in_channels,
                            out_channels=config.out_channels,
+                           num_res_blocks=config.num_res_blocks,
                            model_channels=config.model_channels,
                            attention_resolutions=config.attention_resolutions,
                            channel_mult=config.channel_mult)
@@ -61,6 +62,7 @@ def create_learning_rate_fn(
     # TODO: implement the schedule that the authors have used.
     def _base_fn(step):
         return base_learning_rate
+
     return _base_fn
 
 
@@ -93,7 +95,7 @@ def eval_step(state, batch, timesteps):
     return compute_metrics(logits, batch.labels)
 
 
-def create_input_iter(name:str,
+def create_input_iter(name: str,
                       split: str,
                       batch_size: int,
                       image_size: int,
@@ -224,18 +226,18 @@ def train_and_evaluate(config: ml_collections.ConfigDict,
     # step_offset > 0 if we are resuming training
     step_offset = int(state.step)
     print(f"Step offset: {step_offset}")
-    #state = flax.jax_utils.replicate(state)
+    # state = flax.jax_utils.replicate(state)
     # pmap transform train_step and eval_step
-    #p_train_step = jax.pmap(
+    # p_train_step = jax.pmap(
     #    functools.partial(train_step, learning_rate_fn=learning_rate_fn),
     #    axis_name='batch'
-    #)
+    # )
     # p_eval_step = jax.pmap(eval_step, axis_name='batch')
 
     p_train_step = jax.jit(train_step)
     p_eval_step = jax.jit(eval_step)
-    #p_train_step = (train_step)
-    #p_eval_step = (eval_step)
+    # p_train_step = (train_step)
+    # p_eval_step = (eval_step)
     # Create train loop
     train_metrics = []
     hooks = []
@@ -286,6 +288,3 @@ def train_and_evaluate(config: ml_collections.ConfigDict,
     # Wait until computations are done before exiting
     jax.random.normal(jax.random.PRNGKey(0), ()).block_until_ready()
     return state
-
-
-
