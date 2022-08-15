@@ -52,7 +52,7 @@ def mean_squared_error(logits, labels):
 def compute_metrics(logits, labels):
     """Returns a dictionary of metrics for the given logits and labels."""
     mse = mean_squared_error(logits, labels)
-    return {'mean_squared_error': mse}
+    return {'loss': mse}
 
 
 def create_learning_rate_fn(config: ml_collections.ConfigDict):
