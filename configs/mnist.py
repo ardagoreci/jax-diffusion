@@ -1,13 +1,15 @@
-"""Default hyperparameter configuration."""
-
+"""
+Hyperparameter configuration file for MNIST.
+MNIST will be used for testing the functionality of the framework.
+"""
 import ml_collections
 
 
 def get_config():
-    """Get the default hyperparameter configuration."""
+    """Get the hyperparameter configuration for training on MNIST"""
     config = ml_collections.ConfigDict()
     config.model = 'UNetModel'
-    config.dataset = 'celeb_a'
+    config.dataset = 'mnist'
 
     config.learning_rate = 0.1
     config.batch_size = 256
@@ -22,12 +24,4 @@ def get_config():
 
     config.num_train_steps = -1
     config.steps_per_eval = -1
-
-    # Model hyperparameters
-    config.model_channels = 4
-    config.in_channels = 3
-    config.out_channels = 3
-    config.num_res_blocks = 3
-    config.attention_resolutions = ()
-    config.channel_mult = (1, 2, 4, 8)
     return config

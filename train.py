@@ -2,56 +2,128 @@
 
 # Press ⌃R to execute it or replace it with your code.
 # Press Double ⇧ to search everywhere for classes, files, tool windows, actions, and settings.
+import functools
+import time
+
+import flax
 import ml_collections
 
+import jax
+import optax
+from jax import lax
+import jax.numpy as jnp
+import tensorflow as tf
+import tensorflow_datasets as tfds
+from flax.training.train_state import TrainState
+from flax.training import checkpoints
+from flax.training import common_utils
+from clu import metric_writers
+from clu import periodic_actions
+from absl import logging
 
-def create_model():
-    pass
+import input_pipeline
+import unet
 
 
-def initialized(key, image_size, model):
-    pass
+def create_unet(config):
+    """Creates and initializes the UNet model."""
+    model = unet.UNetModel(in_channels=config.in_channels,
+                           out_channels=config.out_channels,
+                           model_channels=config.model_channels,
+                           attention_resolutions=config.attention_resolutions,
+                           channel_mult=config.channel_mult)
+    return model
 
 
-def cross_entropy_loss(logits, labels):
-    pass
+def initialize(key, image_size, model, local_batch_size):
+    """Utility function to initialize the model."""
+    dummy_x = jnp.zeros((local_batch_size, image_size, image_size, 3))
+    dummy_timesteps = jnp.zeros((local_batch_size,))
+    params = model.init(key, dummy_x, dummy_timesteps)
+    return params
+
+
+def mean_squared_error(logits, labels):
+    """Computes the element-wise mean squared error between logits and labels."""
+    return jnp.mean(jnp.square(logits - labels))
 
 
 def compute_metrics(logits, labels):
-    pass
+    """Returns a dictionary of metrics for the given logits and labels."""
+    mse = mean_squared_error(logits, labels)
+    return {'mean_squared_error': mse}
 
 
 def create_learning_rate_fn(
         config: ml_collections.ConfigDict,
         base_learning_rate: float,
         steps_per_epoch: int):
-    pass
+    # TODO: implement the schedule that the authors have used.
+    def _base_fn(step):
+        return base_learning_rate
+    return _base_fn
 
 
-def train_step(state, batch, learning_rate_fn):
-    pass
+def train_step(state: TrainState,
+               batch,
+               timesteps) -> TrainState:
+    """Perform a single training step."""
+
+    def loss_fn(params):
+        logits = state.apply_fn(params, batch.images, timesteps)
+        loss = mean_squared_error(logits, batch.labels)
+        return loss, logits
+
+    # Compute gradient
+    grad_fn = jax.value_and_grad(loss_fn, has_aux=True)
+    (logits, aux), grads = grad_fn(state.params)
+    # Update parameters (all-reduce gradients)
+    # grads = jax.lax.pmean(grads)
+    metrics = compute_metrics(logits, batch.labels)
+
+    # Update train state
+    new_state = state.apply_gradients(grads=grads)
+    return new_state, metrics
 
 
-def eval_step(state, batch):
-    pass
+@jax.jit
+def eval_step(state, batch, timesteps):
+    """Perform a single evaluation step."""
+    logits = state.apply_fn(state.params, batch.images, timesteps)
+    return compute_metrics(logits, batch.labels)
 
 
-def prepare_tf_data(xs):
-    # TODO: this function should be implemented within data.py, not here.
-    pass
+def create_input_iter(name:str,
+                      split: str,
+                      batch_size: int,
+                      image_size: int,
+                      cache: bool):
+    """Creates an iterator for the given dataset and split.
+    Args:
+        name: name of the dataset (specified in the config file)
+        split: split of the dataset ('train', 'test')
+        batch_size: batch size
+        image_size: an integer specifying the size of the input images (not arbitrary
+                    given UNet architecture)
+        cache: whether to cache the dataset in memory
+    Returns:
+        an iterator of Batch named tuples containing the image and labels.
 
-
-def create_input_iter(dataset_builder, batch_size, image_size, dtype, train,
-                      cache):
-    pass
-
-
-def restore_checkpoint(state, workdir):
-    pass
+    TODO: this function does not return a dataset for the diffusion task!
+    It is meant to be a test function for the rest.
+    """
+    dataset = input_pipeline.create_split(name=name, split=split,
+                                          batch_size=batch_size, cache=cache)
+    dataset = input_pipeline.preprocess_image_dataset(dataset, image_size)
+    iterator = input_pipeline.convert2iterator(dataset)
+    iterator = flax.jax_utils.prefetch_to_device(iterator, size=2)
+    return iterator
 
 
 def save_checkpoint(state, workdir):
-    pass
+    state = jax.device_get(jax.tree_util.tree_map(lambda x: x[0], state))
+    step = int(state.step)
+    checkpoints.save_checkpoint(workdir, target=state, step=step, keep=3)
 
 
 def create_train_state(rng,
@@ -59,7 +131,27 @@ def create_train_state(rng,
                        model,
                        image_size,
                        learning_rate_fn):
-    pass
+    """
+    Creates the initial train state object.
+    Args:
+        rng: random number generator
+        config: hyperparameter configuration
+        model: Flax model
+        image_size: integer specifying the height and width of input images
+        learning_rate_fn: function that returns the learning rate for a given step.
+    Returns:
+        the initial train state object.
+    """
+    params = initialize(rng, image_size, model)
+    optimizer = optax.adam(learning_rate_fn)
+    step = 0
+    opt_state = optimizer.init(params)
+    state = TrainState(apply_fn=model.apply,
+                       params=params,
+                       tx=optimizer,
+                       step=step,
+                       opt_state=opt_state)
+    return state
 
 
 def train_and_evaluate(config: ml_collections.ConfigDict,
@@ -73,19 +165,119 @@ def train_and_evaluate(config: ml_collections.ConfigDict,
     Returns:
         final train state.
     """
-
     # Initialize writer
-    # rng = jax.random.PRNGKey(0)
+    writer = metric_writers.create_default_writer(logdir=workdir,
+                                                  just_logging=jax.process_index() != 0)  # TODO: what??
+    rng = jax.random.PRNGKey(0)
+    image_size = config.image_size
     # compute local_batch_size (with the appropriate divisibility assertion)
-    # compute num_train_steps
-    # steps_per_checkpoint = steps_per_epoch * 10
-    # base_learning_rate = config.learning_rate * config.batch_size / 256.
+    if config.batch_size % jax.device_count() > 0:
+        raise ValueError("Global batch size should be divisible by the number of devices.")
+    local_batch_size = config.batch_size // jax.process_count()  # TODO: what is the difference between process_count
+    # and device_count?
+    platform = jax.local_devices()[0].platform
+
+    if config.half_precision:
+        if platform == 'tpu':
+            input_dtype = tf.bfloat16
+        else:
+            input_dtype = tf.float16
+    else:
+        input_dtype = tf.float32
+
+    # Create input iterators
+    train_iter = create_input_iter(name=config.dataset,
+                                   split='train',
+                                   batch_size=local_batch_size,
+                                   image_size=image_size,
+                                   cache=config.cache)
+    test_iter = create_input_iter(name=config.dataset,
+                                  split='test',
+                                  batch_size=local_batch_size,
+                                  image_size=image_size,
+                                  cache=config.cache)
+    # Compute num_train_steps
+    steps_per_epoch = config.steps_per_epoch
+    if config.num_train_steps == -1:
+        num_steps = int(steps_per_epoch * config.num_epochs)
+    else:
+        num_steps = config.num_train_steps
+    steps_per_checkpoint = steps_per_epoch * 10
+
+    if config.steps_per_eval == -1:
+        steps_per_eval = 1000  # TODO: this is hard-coded for now.
+    else:
+        steps_per_eval = config.steps_per_eval
+
+    base_learning_rate = config.learning_rate * config.batch_size / 256.
 
     # Create model
-    # create learning rate function
-    # create train_state
+    model = create_unet(rng, config, image_size, local_batch_size)
+    # Create learning rate function
+    learning_rate_fn = create_learning_rate_fn(
+        config, base_learning_rate, steps_per_epoch)
+    # Create train_state
+    state = create_train_state(rng, config, model, image_size, learning_rate_fn)
     # restore checkpoint
+    state = checkpoints.restore_checkpoint(workdir, state)
+    # step_offset > 0 if we are resuming training
+    step_offset = int(state.step)
+    # state = flax.jax_utils.replicate(state)
     # pmap transform train_step and eval_step
-    #
-    pass
+    p_train_step = jax.pmap(
+        functools.partial(train_step, learning_rate_fn=learning_rate_fn),  # TODO: what is functools.partial doing?
+        axis_name='batch'
+    )
+    p_eval_step = jax.pmap(eval_step, axis_name='batch')
+
+    # Create train loop
+    train_metrics = []
+    hooks = []
+    if jax.process_index() == 0:
+        hooks += [periodic_actions.Profile(num_profile_steps=5, logdir=workdir)]
+    train_metrics_last_t = time.time()
+    logging.info("Initial compilation, this might take some minutes...")
+    for step, batch in zip(range(step_offset, num_steps), train_iter):
+        state, metrics = p_train_step(state, batch)
+        for h in hooks:
+            h(step)
+        if step == step_offset:
+            logging.info("Initial compilation done.")
+
+        if config.get('log_every_n_step'):
+            train_metrics.append(metrics)
+            if (step + 1) % config.log_every_steps == 0:
+                train_metrics = common_utils.get_metrics(train_metrics)
+                summary = {
+                    f'train_{k}': v
+                    for k, v in jax.tree_util.tree_map(lambda x: x.mean(), train_metrics).items()
+                }
+                summary['steps_per_second'] = config.log_every_steps / (
+                        time.time() - train_metrics_last_t)
+                writer.write_scalars(step + 1, summary)
+                train_metrics = []
+                train_metrics_last_t = time.time()
+
+            if (step + 1) % steps_per_epoch == 0:
+                epoch = step // steps_per_epoch
+                eval_metrics = []
+                for _ in range(steps_per_eval):
+                    eval_batch = next(test_iter)
+                    metrics = p_eval_step(eval_batch)
+                    eval_metrics.append(metrics)
+                eval_metrics = common_utils.get_metrics(eval_metrics)
+                summary = jax.tree_util.tree_map(lambda x: x.mean(), eval_metrics)
+                logging.info('eval epoch: %d, loss: %.4f',
+                             epoch, summary['loss'])
+                writer.write_scalars(
+                    step + 1, {f'eval_{key}': val for key, val in summary.items()})
+                writer.flush()
+            if (step + 1) % steps_per_checkpoint == 0 or step + 1 == num_steps:
+                checkpoints.save_checkpoint(workdir, state)
+
+    # Wait until computations are done before exiting
+    jax.random.normal(jax.random.PRNGKey(0), ()).block_until_ready()
+    return state
+
+
 
