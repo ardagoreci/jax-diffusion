@@ -12,6 +12,8 @@ def get_config():
     config.batch_size = 128
 
     config.image_size = 28
+    config.steps_per_epoch = 60000 // config.batch_size
+    config.steps_per_eval = 10000 // config.batch_size
 
     # Model hyperparameters
     config.model_channels = 4
