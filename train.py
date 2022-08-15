@@ -210,8 +210,6 @@ def train_and_evaluate(config: ml_collections.ConfigDict,
     else:
         steps_per_eval = config.steps_per_eval
 
-    base_learning_rate = config.learning_rate * config.batch_size / 256.
-
     # Create model
     # model = create_unet(rng, config, image_size, local_batch_size)
     model = create_unet(config)
@@ -244,7 +242,7 @@ def train_and_evaluate(config: ml_collections.ConfigDict,
     train_metrics_last_t = time.time()
     logging.info("Initial compilation, this might take some minutes...")
     for step, batch in zip(range(step_offset, num_steps), train_iter):
-        state, metrics = p_train_step(state, batch, jnp.arange(0, config.batch_size))
+        state, metrics = p_train_step(state, batch, jnp.arange(0, local_batch_size))
         for h in hooks:
             h(step)
         if step == step_offset:
@@ -254,7 +252,7 @@ def train_and_evaluate(config: ml_collections.ConfigDict,
             train_metrics.append(metrics)
             if (step + 1) % config.log_every_n_steps == 0:
                 print(f"train_metrics length: {len(train_metrics)} at step: {step}")
-                train_metrics = common_utils.get_metrics(train_metrics)
+                # train_metrics = common_utils.get_metrics(train_metrics)  # TODO: this is problematic with single device!
                 summary = {
                     f'train_{k}': v
                     for k, v in jax.tree_util.tree_map(lambda x: x.mean(), train_metrics).items()
