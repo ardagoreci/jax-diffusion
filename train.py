@@ -247,7 +247,6 @@ def train_and_evaluate(config: ml_collections.ConfigDict,
             h(step)
         if step == step_offset:
             logging.info("Initial compilation done.")
-            print("Logging info done.")
         if config.log_every_n_steps:
             train_metrics.append(metrics)
             if (step + 1) % config.log_every_n_steps == 0:
@@ -271,7 +270,7 @@ def train_and_evaluate(config: ml_collections.ConfigDict,
                     eval_batch = next(test_iter)
                     metrics = p_eval_step(state, eval_batch)
                     eval_metrics.append(metrics)
-                eval_metrics = common_utils.get_metrics(eval_metrics)
+                # eval_metrics = common_utils.get_metrics(eval_metrics)
                 summary = jax.tree_util.tree_map(lambda x: x.mean(), eval_metrics)
                 logging.info('eval epoch: %d, loss: %.4f',
                              epoch, summary['loss'])
