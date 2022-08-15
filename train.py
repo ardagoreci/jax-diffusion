@@ -157,11 +157,12 @@ def create_train_state(rng,
 def summarize_metrics(metrics):
     """Summarizes the metrics."""
     summary = {}
-    for key, value in metrics:
-        if summary.get(key) is None:
-            summary[key] = value
-        else:
-            summary[key] += value
+    for metric in metrics:
+        for key, value in metric.items():
+            if summary.get(key) is None:
+                summary[key] = value
+            else:
+                summary[key] += value
     return summary
 
 
