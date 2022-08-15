@@ -492,15 +492,16 @@ class UNetModel(nn.Module):
         return self.out(h)
 
 
+
 class AttentionBlock(nn.Module):
     """
     An attention block that allows spatial positions to attend to each other.
 
     channels: the number of input channels
     num_heads: the number of attention heads
-    num_head_channels: the number of channels per attention head
+    num_head_channels:
     use_new_attention_order:
-
+    (unit-tested)
     """
     channels: int
     num_heads: int = 1
@@ -509,29 +510,20 @@ class AttentionBlock(nn.Module):
 
     @nn.compact
     def __call__(self, x):
-        # Compute num_heads
-        if self.num_head_channels == -1:
-            num_heads = self.num_heads
-        else:
-            num_heads = self.channels // self.num_head_channels
-
         B, *spatial, C = x.shape  # get dimensions
         # flatten x
         x = jnp.reshape(x, (B, -1, C))
         # normalize
         h = normalization(C)(x)
         # convolve to get qkv
-        qkv = nn.Conv(features=num_heads * self.channels * 3,  # Getting the qkv tensor for multi-head attention
+        qkv = nn.Conv(features=self.num_heads * self.channels * 3,  # Getting the qkv tensor for multi-head attention
                       kernel_size=(1,))(h)
         # attention
-        h = QKVAttention(num_heads)(qkv)
-        # transpose to (B, d_model, C)
-        h = h.transpose((0, 2, 1))  # getting channels last for convolutions
+        h = QKVAttention(self.num_heads)(qkv)  # (B, T, d_model)
+        h = h.transpose((0, 2, 1))
         # projection layer
-        h = (nn.Conv(features=self.channels, kernel_size=1))(h)  # convolutional layer to get the value channels back to
-        # the original size. Thus, things do not explode with increased number of heads.
-        # Ho et al. have not employed such a zero module, I suspect it is to make this layer a purely skip connection
-        # at initialization - only later do the layers diverge from zero.
+        h = (nn.Conv(features=self.channels, kernel_size=(1,)))(h)  # TODO: there is supposed to be a ZeroModule here
+        # - I don't know how to zero out the parameters of a module yet!
 
         # residual connection and reshape to original shape
         return (x + h).reshape(B, *spatial, C)
