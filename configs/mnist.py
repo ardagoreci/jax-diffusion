@@ -11,6 +11,8 @@ def get_config():
     config.dataset = 'mnist'
     config.batch_size = 128
 
+    config.image_size = 28
+
     # Model hyperparameters
     config.model_channels = 4
     config.in_channels = 1
