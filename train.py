@@ -55,13 +55,10 @@ def compute_metrics(logits, labels):
     return {'mean_squared_error': mse}
 
 
-def create_learning_rate_fn(
-        config: ml_collections.ConfigDict,
-        base_learning_rate: float,
-        steps_per_epoch: int):
+def create_learning_rate_fn(config: ml_collections.ConfigDict):
     # TODO: implement the schedule that the authors have used.
     def _base_fn(step):
-        return base_learning_rate
+        return config.learning_rate
 
     return _base_fn
 
@@ -218,7 +215,7 @@ def train_and_evaluate(config: ml_collections.ConfigDict,
     # model = create_unet(rng, config, image_size, local_batch_size)
     model = create_unet(config)
     # Create learning rate function
-    learning_rate_fn = create_learning_rate_fn(base_learning_rate, steps_per_epoch)
+    learning_rate_fn = create_learning_rate_fn(config)
     # Create train_state
     state = create_train_state(rng, config, model, image_size, learning_rate_fn)
     # restore checkpoint
