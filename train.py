@@ -115,7 +115,8 @@ def create_input_iter(name: str,
                                           batch_size=batch_size, cache=cache)
     dataset = input_pipeline.preprocess_image_dataset(dataset, image_size)
     iterator = input_pipeline.convert2iterator(dataset)
-    iterator = flax.jax_utils.prefetch_to_device(iterator, size=2)
+    # TODO: there is an issue with the prefetch.
+    # iterator = flax.jax_utils.prefetch_to_device(iterator, size=2)
     return iterator
 
 
