@@ -16,8 +16,8 @@ def get_config():
     config.steps_per_eval = 10000 // config.batch_size
 
     # Model hyperparameters
-    config.learning_rate = 0.001
-    config.model_channels = 4
+    config.learning_rate = 1e-4
+    config.model_channels = 16
     config.in_channels = 1
     config.out_channels = 1
     config.num_res_blocks = 2
