@@ -232,8 +232,7 @@ def train_and_evaluate(config: ml_collections.ConfigDict,
     # restore checkpoint
     state = checkpoints.restore_checkpoint(workdir, state)
     # step_offset > 0 if we are resuming training
-    step_offset = int(state.step)
-    print(f"Step offset: {step_offset}")
+    step_offset = int(state.step)  # 0 usually
     # state = flax.jax_utils.replicate(state)
     # pmap transform train_step and eval_step
     # p_train_step = jax.pmap(
@@ -262,7 +261,6 @@ def train_and_evaluate(config: ml_collections.ConfigDict,
         if config.log_every_n_steps:
             train_metrics.append(metrics)
             if (step + 1) % config.log_every_n_steps == 0:
-                print(f"train_metrics length: {len(train_metrics)} at step: {step}")
                 # train_metrics = common_utils.get_metrics(train_metrics)  # TODO: this is problematic with single device!
                 # summary = {
                 #    f'train_{k}': v
@@ -274,14 +272,13 @@ def train_and_evaluate(config: ml_collections.ConfigDict,
                 writer.write_scalars(step + 1, summary)
                 train_metrics = []
                 train_metrics_last_t = time.time()
-                print(f"Wrote metrics at step {step}")
 
             if (step + 1) % steps_per_epoch == 0:
                 epoch = step // steps_per_epoch
                 eval_metrics = []
                 for _ in range(steps_per_eval):
                     eval_batch = next(test_iter)
-                    metrics = p_eval_step(state, eval_batch)
+                    metrics = p_eval_step(state, eval_batch, jnp.arange(0, local_batch_size))
                     eval_metrics.append(metrics)
                 # eval_metrics = common_utils.get_metrics(eval_metrics)
                 # summary = jax.tree_util.tree_map(lambda x: x.mean(), eval_metrics)
