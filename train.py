@@ -252,10 +252,12 @@ def train_and_evaluate(config: ml_collections.ConfigDict,
             if (step + 1) % config.log_every_n_steps == 0:
                 print(f"train_metrics length: {len(train_metrics)} at step: {step}")
                 # train_metrics = common_utils.get_metrics(train_metrics)  # TODO: this is problematic with single device!
-                summary = {
-                    f'train_{k}': v
-                    for k, v in jax.tree_util.tree_map(lambda x: x.mean(), train_metrics).items()
-                }
+                # summary = {
+                #    f'train_{k}': v
+                #    for k, v in jax.tree_util.tree_map(lambda x: x.mean(), train_metrics).items()
+                # }
+                print(train_metrics)
+                break
                 summary['steps_per_second'] = config.log_every_n_steps / (
                         time.time() - train_metrics_last_t)
                 writer.write_scalars(step + 1, summary)
