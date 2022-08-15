@@ -244,7 +244,7 @@ def train_and_evaluate(config: ml_collections.ConfigDict,
     train_metrics_last_t = time.time()
     logging.info("Initial compilation, this might take some minutes...")
     for step, batch in zip(range(step_offset, num_steps), train_iter):
-        state, metrics = p_train_step(state, batch, jnp.arange(0, config.local_batch_size))
+        state, metrics = p_train_step(state, batch, jnp.arange(0, config.batch_size))
         for h in hooks:
             h(step)
         if step == step_offset:
