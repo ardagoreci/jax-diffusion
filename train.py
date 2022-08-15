@@ -38,7 +38,7 @@ def create_unet(config):
 
 def initialize(key, image_size, model, local_batch_size):
     """Utility function to initialize the model."""
-    dummy_x = jnp.zeros((local_batch_size, image_size, image_size, 3))
+    dummy_x = jnp.zeros((local_batch_size, image_size, image_size, 1))
     dummy_timesteps = jnp.zeros((local_batch_size,))
     params = model.init(key, dummy_x, dummy_timesteps)
     return params
