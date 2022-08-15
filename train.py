@@ -141,7 +141,7 @@ def create_train_state(rng,
     Returns:
         the initial train state object.
     """
-    params = initialize(rng, image_size, model)
+    params = initialize(rng, model, image_size, local_batch_size=128)
     optimizer = optax.adam(learning_rate_fn)
     step = 0
     opt_state = optimizer.init(params)
