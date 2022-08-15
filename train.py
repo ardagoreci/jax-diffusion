@@ -175,6 +175,7 @@ def train_and_evaluate(config: ml_collections.ConfigDict,
         raise ValueError("Global batch size should be divisible by the number of devices.")
     local_batch_size = config.batch_size // jax.process_count()  # TODO: what is the difference between process_count
     # and device_count?
+    print(f"Local batch size: {local_batch_size}")
     platform = jax.local_devices()[0].platform
 
     if config.half_precision:
@@ -212,24 +213,29 @@ def train_and_evaluate(config: ml_collections.ConfigDict,
     base_learning_rate = config.learning_rate * config.batch_size / 256.
 
     # Create model
-    model = create_unet(rng, config, image_size, local_batch_size)
+    # model = create_unet(rng, config, image_size, local_batch_size)
+    model = create_unet(config)
     # Create learning rate function
-    learning_rate_fn = create_learning_rate_fn(
-        config, base_learning_rate, steps_per_epoch)
+    learning_rate_fn = create_learning_rate_fn(base_learning_rate, steps_per_epoch)
     # Create train_state
     state = create_train_state(rng, config, model, image_size, learning_rate_fn)
     # restore checkpoint
     state = checkpoints.restore_checkpoint(workdir, state)
     # step_offset > 0 if we are resuming training
     step_offset = int(state.step)
-    # state = flax.jax_utils.replicate(state)
+    print(f"Step offset: {step_offset}")
+    #state = flax.jax_utils.replicate(state)
     # pmap transform train_step and eval_step
-    p_train_step = jax.pmap(
-        functools.partial(train_step, learning_rate_fn=learning_rate_fn),  # TODO: what is functools.partial doing?
-        axis_name='batch'
-    )
-    p_eval_step = jax.pmap(eval_step, axis_name='batch')
+    #p_train_step = jax.pmap(
+    #    functools.partial(train_step, learning_rate_fn=learning_rate_fn),
+    #    axis_name='batch'
+    #)
+    # p_eval_step = jax.pmap(eval_step, axis_name='batch')
 
+    p_train_step = jax.jit(train_step)
+    p_eval_step = jax.jit(eval_step)
+    #p_train_step = (train_step)
+    #p_eval_step = (eval_step)
     # Create train loop
     train_metrics = []
     hooks = []
@@ -243,27 +249,29 @@ def train_and_evaluate(config: ml_collections.ConfigDict,
             h(step)
         if step == step_offset:
             logging.info("Initial compilation done.")
-
-        if config.get('log_every_n_step'):
+            print("Logging info done.")
+        if config.log_every_n_steps:
             train_metrics.append(metrics)
-            if (step + 1) % config.log_every_steps == 0:
+            if (step + 1) % config.log_every_n_steps == 0:
+                print(f"train_metrics length: {len(train_metrics)} at step: {step}")
                 train_metrics = common_utils.get_metrics(train_metrics)
                 summary = {
                     f'train_{k}': v
                     for k, v in jax.tree_util.tree_map(lambda x: x.mean(), train_metrics).items()
                 }
-                summary['steps_per_second'] = config.log_every_steps / (
+                summary['steps_per_second'] = config.log_every_n_steps / (
                         time.time() - train_metrics_last_t)
                 writer.write_scalars(step + 1, summary)
                 train_metrics = []
                 train_metrics_last_t = time.time()
+                print(f"Wrote metrics at step {step}")
 
             if (step + 1) % steps_per_epoch == 0:
                 epoch = step // steps_per_epoch
                 eval_metrics = []
                 for _ in range(steps_per_eval):
                     eval_batch = next(test_iter)
-                    metrics = p_eval_step(eval_batch)
+                    metrics = p_eval_step(state, eval_batch)
                     eval_metrics.append(metrics)
                 eval_metrics = common_utils.get_metrics(eval_metrics)
                 summary = jax.tree_util.tree_map(lambda x: x.mean(), eval_metrics)
