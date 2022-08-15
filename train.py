@@ -154,6 +154,17 @@ def create_train_state(rng,
     return state
 
 
+def summarize_metrics(metrics):
+    """Summarizes the metrics."""
+    summary = {}
+    for key, value in metrics:
+        if summary.get(key) is None:
+            summary[key] = value
+        else:
+            summary[key] += value
+    return summary
+
+
 def train_and_evaluate(config: ml_collections.ConfigDict,
                        workdir: str):
     """
@@ -256,8 +267,7 @@ def train_and_evaluate(config: ml_collections.ConfigDict,
                 #    f'train_{k}': v
                 #    for k, v in jax.tree_util.tree_map(lambda x: x.mean(), train_metrics).items()
                 # }
-                print(train_metrics)
-                break
+                summary = summarize_metrics(train_metrics)
                 summary['steps_per_second'] = config.log_every_n_steps / (
                         time.time() - train_metrics_last_t)
                 writer.write_scalars(step + 1, summary)
@@ -273,7 +283,8 @@ def train_and_evaluate(config: ml_collections.ConfigDict,
                     metrics = p_eval_step(state, eval_batch)
                     eval_metrics.append(metrics)
                 # eval_metrics = common_utils.get_metrics(eval_metrics)
-                summary = jax.tree_util.tree_map(lambda x: x.mean(), eval_metrics)
+                # summary = jax.tree_util.tree_map(lambda x: x.mean(), eval_metrics)
+                summary = summarize_metrics(eval_metrics)
                 logging.info('eval epoch: %d, loss: %.4f',
                              epoch, summary['loss'])
                 writer.write_scalars(
