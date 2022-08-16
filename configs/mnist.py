@@ -14,6 +14,7 @@ def get_config():
     config.image_size = 32
     config.steps_per_epoch = 60000 // config.batch_size
     config.steps_per_eval = 10000 // config.batch_size
+    config.steps_per_checkpoint = 300
 
     # Model hyperparameters
     config.learning_rate = 1e-4

@@ -96,7 +96,8 @@ def create_input_iter(name: str,
                       split: str,
                       batch_size: int,
                       image_size: int,
-                      cache: bool):
+                      cache: bool,
+                      dtype):
     """Creates an iterator for the given dataset and split.
     Args:
         name: name of the dataset (specified in the config file)
@@ -113,7 +114,7 @@ def create_input_iter(name: str,
     """
     dataset = input_pipeline.create_split(name=name, split=split,
                                           batch_size=batch_size, cache=cache)
-    dataset = input_pipeline.preprocess_image_dataset(dataset, image_size)
+    dataset = input_pipeline.preprocess_image_dataset(dataset, image_size, dtype=dtype)
     iterator = input_pipeline.convert2iterator(dataset)
     # TODO: there is an issue with the prefetch.
     # iterator = flax.jax_utils.prefetch_to_device(iterator, size=2)
@@ -205,19 +206,21 @@ def train_and_evaluate(config: ml_collections.ConfigDict,
                                    split='train',
                                    batch_size=local_batch_size,
                                    image_size=image_size,
-                                   cache=config.cache)
+                                   cache=config.cache,
+                                   dtype=input_dtype)
     test_iter = create_input_iter(name=config.dataset,
                                   split='test',
                                   batch_size=local_batch_size,
                                   image_size=image_size,
-                                  cache=config.cache)
+                                  cache=config.cache,
+                                  dtype=input_dtype)
     # Compute num_train_steps
     steps_per_epoch = config.steps_per_epoch
     if config.num_train_steps == -1:
         num_steps = int(steps_per_epoch * config.num_epochs)
     else:
         num_steps = config.num_train_steps
-    steps_per_checkpoint = steps_per_epoch * 10
+    steps_per_checkpoint = config.steps_per_checkpoint
 
     if config.steps_per_eval == -1:
         steps_per_eval = 1000  # TODO: this is hard-coded for now.
