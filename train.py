@@ -63,6 +63,21 @@ def create_learning_rate_fn(config: ml_collections.ConfigDict):
     return _base_fn
 
 
+def prepare_tf_data(xs):
+    """Convert a input batch from tf Tensors to numpy arrays."""
+    local_device_count = jax.local_device_count()
+
+    def _prepare(x):
+        # Use _numpy() for zero-copy conversion between TF and NumPy.
+        x = x._numpy()  # pylint: disable=protected-access
+
+        # reshape (host_batch_size, height, width, 3) to
+        # (local_devices, device_batch_size, height, width, 3)
+        return x.reshape((local_device_count, -1) + x.shape[1:])
+
+    return jax.tree_util.tree_map(_prepare, xs)
+
+
 def train_step(state: TrainState,
                batch,
                timesteps) -> TrainState:
@@ -170,21 +185,6 @@ def summarize_metrics(metrics):
     for key, value in summary.items():
         summary[key] = value / len(metrics)
     return summary
-
-
-def prepare_tf_data(xs):
-    """Convert a input batch from tf Tensors to numpy arrays."""
-    local_device_count = jax.local_device_count()
-
-    def _prepare(x):
-        # Use _numpy() for zero-copy conversion between TF and NumPy.
-        x = x._numpy()  # pylint: disable=protected-access
-
-        # reshape (host_batch_size, height, width, 3) to
-        # (local_devices, device_batch_size, height, width, 3)
-        return x.reshape((local_device_count, -1) + x.shape[1:])
-
-    return jax.tree_util.tree_map(_prepare, xs)
 
 
 def train_and_evaluate(config: ml_collections.ConfigDict,
