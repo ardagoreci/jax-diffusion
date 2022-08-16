@@ -133,8 +133,7 @@ def create_input_iter(name: str,
     dataset = input_pipeline.make_denoising_dataset(dataset)
     dataset = dataset.prefetch(tf.data.AUTOTUNE)
     iterator = map(prepare_tf_data, dataset)
-    # iterator = input_pipeline.convert2iterator(dataset)
-    # TODO: there is an issue with the prefetch.
+    iterator = input_pipeline.batch_iterator(iterator)
     iterator = flax.jax_utils.prefetch_to_device(iterator, size=2)
     return iterator
 
@@ -269,9 +268,7 @@ def train_and_evaluate(config: ml_collections.ConfigDict,
     train_metrics_last_t = time.time()
     logging.info("Initial compilation, this might take some minutes...")
     for step, batch in zip(range(step_offset, num_steps), train_iter):
-        # repeat_timesteps = jnp.repeat(jnp.arange(0, local_batch_size),  # TODO: temporary workaround
-        #                              repeats=jax.device_count(), axis=0)
-        repeat_timesteps = flax.jax_utils.replicate(jnp.arange(0, local_batch_size))
+        repeat_timesteps = flax.jax_utils.replicate(jnp.arange(0, local_batch_size))  # TODO: temporary workaround
         state, metrics = p_train_step(state, batch, repeat_timesteps)
         for h in hooks:
             h(step)
@@ -297,9 +294,7 @@ def train_and_evaluate(config: ml_collections.ConfigDict,
                 eval_metrics = []
                 for _ in range(steps_per_eval):
                     eval_batch = next(test_iter)
-                    # repeat_timesteps = jnp.repeat(jnp.arange(0, local_batch_size),  # TODO: temporary workaround
-                    #                              repeats=jax.device_count(), axis=0)
-                    repeat_timesteps = flax.jax_utils.replicate(jnp.arange(0, local_batch_size))
+                    repeat_timesteps = flax.jax_utils.replicate(jnp.arange(0, local_batch_size))  # TODO: temporary workaround
                     metrics = p_eval_step(state, eval_batch, repeat_timesteps)
                     eval_metrics.append(metrics)
                 eval_metrics = common_utils.get_metrics(eval_metrics)

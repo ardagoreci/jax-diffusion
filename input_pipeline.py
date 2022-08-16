@@ -112,6 +112,10 @@ def convert2iterator(ds):
     return iter(tfds.as_numpy(ds))
 
 
+def batch_iterator(it):
+    return map(lambda x, y: Batch(x, y), it)
+
+
 def prepare_tf_data(xs):
     # TODO: implement this function
     pass
