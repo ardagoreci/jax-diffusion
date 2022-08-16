@@ -280,12 +280,14 @@ def train_and_evaluate(config: ml_collections.ConfigDict,
                                    batch_size=config.batch_size,
                                    image_size=config.image_size,
                                    cache=config.cache,
+                                   data_dir=config.data_dir,
                                    dtype=input_dtype)
     test_iter = create_input_iter(name=config.dataset,
                                   split='test',
                                   batch_size=config.batch_size,
                                   image_size=config.image_size,
                                   cache=config.cache,
+                                  data_dir=config.data_dir,
                                   dtype=input_dtype)
     # Compute num_train_steps
     steps_per_epoch = config.steps_per_epoch
