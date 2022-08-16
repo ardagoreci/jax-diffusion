@@ -123,7 +123,7 @@ def create_input_iter(name: str,
 
 
 def save_checkpoint(workdir, state):
-    # state = jax.device_get(jax.tree_util.tree_map(lambda x: x[0], state)) TODO: problematic with single GPU
+    state = jax.device_get(jax.tree_util.tree_map(lambda x: x[0], state))
     step = int(state.step)
     checkpoints.save_checkpoint(workdir, target=state, step=step, keep=3)
 
@@ -156,7 +156,7 @@ def create_train_state(rng,
 
 def summarize_metrics(metrics):
     """Summarizes the metrics."""
-    # TODO: this method might be chocking the training loop
+    # TODO: this method might be choking the training loop
     summary = {}
     for metric in metrics:
         for key, value in metric.items():
@@ -238,7 +238,8 @@ def train_and_evaluate(config: ml_collections.ConfigDict,
     state = checkpoints.restore_checkpoint(workdir, state)
     # step_offset > 0 if we are resuming training
     step_offset = int(state.step)  # 0 usually
-    # state = flax.jax_utils.replicate(state)
+    state = flax.jax_utils.replicate(state)
+
     # pmap transform train_step and eval_step
     p_train_step = jax.pmap(
         functools.partial(train_step, learning_rate_fn=learning_rate_fn),
@@ -246,8 +247,6 @@ def train_and_evaluate(config: ml_collections.ConfigDict,
     )
     p_eval_step = jax.pmap(eval_step, axis_name='batch')
 
-    # p_train_step = (train_step)
-    # p_eval_step = (eval_step)
     # Create train loop
     train_metrics = []
     hooks = []
