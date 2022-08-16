@@ -35,4 +35,7 @@ def get_config():
     config.attention_resolutions = ()
     config.channel_mult = (1, 2, 4, 8)
 
+    # Seed for reproducibility
+    config.seed = 42
+
     return config

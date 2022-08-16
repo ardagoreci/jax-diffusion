@@ -119,8 +119,8 @@ def diffusion_train_step(key: jax.random.PRNGKey,
     5. All-reduce gradients
     6. Update train state
     """
-    images = batch.images
-    epsilons = batch.epsilons
+    images = batch[0]
+    epsilons = batch[1]
     batch_size, *_ = images.shape
     timesteps = jax.random.randint(key, low=1, high=1000, shape=(batch_size,))  # Diffusion for 1000 steps
     noised_images = jax.vmap(diffuse_image)(images, epsilons, timesteps)
@@ -152,8 +152,8 @@ def eval_step(state, batch, timesteps):
 
 def diffusion_eval_step(key, state, batch):
     """Perform a single evaluation step for diffusion."""
-    images = batch.images
-    epsilons = batch.epsilons
+    images = batch[0]
+    epsilons = batch[1]
     batch_size, *_ = images.shape
     timesteps = jax.random.randint(key, low=1, high=1000, shape=(batch_size,))  # Diffusion for 1000 steps
     noised_images = jax.vmap(diffuse_image)(images, epsilons, timesteps)
