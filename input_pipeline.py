@@ -97,7 +97,7 @@ def preprocess_image_dataset(dataset, image_size: int,
 
 def make_denoising_dataset(dataset):
     def corrupt(images, labels):
-        noise = tf.random.normal(shape=images.shape, mean=0.0, stddev=0.5)
+        noise = tf.random.normal(shape=images.shape, mean=0.0, stddev=1.0)
         noised = images + noise
         return noised, images
     dataset = dataset.map(corrupt)
