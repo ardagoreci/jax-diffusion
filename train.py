@@ -163,7 +163,10 @@ def create_train_state(rng,
     """
     params = initialize(rng, config.image_size, model,
                         local_batch_size=config.batch_size//jax.device_count())
-    optimizer = optax.adam(learning_rate_fn)
+    optimizer = optax.chain(
+        optax.lamb(learning_rate_fn),
+        optax.adaptive_grad_clip(config.grad_clip)
+    )
     opt_state = optimizer.init(params)
     state = TrainState(apply_fn=model.apply,
                        params=params,
@@ -272,9 +275,7 @@ def train_and_evaluate(config: ml_collections.ConfigDict,
     logging.info("Initial compilation, this might take some minutes...")
     for step, batch in zip(range(step_offset, num_steps), train_iter):
         repeat_timesteps = flax.jax_utils.replicate(jnp.arange(0, local_batch_size))  # TODO: temporary workaround
-        actual_compute_time = time.time()
         state, metrics = p_train_step(state, batch, repeat_timesteps)
-        logging.info(f"Compute time: {time.time() - actual_compute_time}")
         if step == step_offset:
             logging.info("Initial compilation done.")
         if config.log_every_n_steps:

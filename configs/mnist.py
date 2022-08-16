@@ -18,6 +18,10 @@ def get_config():
     config.steps_per_eval = 10000 // config.batch_size
     config.steps_per_checkpoint = 300
 
+    # Optimizer
+    config.learning_rate = 0.1
+    config.grad_clip = 0.012
+
     # Model hyperparameters
     config.learning_rate = 1e-4
     config.model_channels = 16
