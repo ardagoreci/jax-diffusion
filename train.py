@@ -255,7 +255,9 @@ def train_and_evaluate(config: ml_collections.ConfigDict,
     train_metrics_last_t = time.time()
     logging.info("Initial compilation, this might take some minutes...")
     for step, batch in zip(range(step_offset, num_steps), train_iter):
-        state, metrics = p_train_step(state, batch, jnp.arange(0, local_batch_size))
+        repeat_timesteps = jnp.repeat(jnp.arange(0, local_batch_size),  # TODO: temporary workaround
+                                      repeats=jax.device_count(), axis=0)
+        state, metrics = p_train_step(state, batch, repeat_timesteps)
         for h in hooks:
             h(step)
         if step == step_offset:
@@ -280,7 +282,9 @@ def train_and_evaluate(config: ml_collections.ConfigDict,
                 eval_metrics = []
                 for _ in range(steps_per_eval):
                     eval_batch = next(test_iter)
-                    metrics = p_eval_step(state, eval_batch, jnp.arange(0, local_batch_size))
+                    repeat_timesteps = jnp.repeat(jnp.arange(0, local_batch_size),  # TODO: temporary workaround
+                                                  repeats=jax.device_count(), axis=0)
+                    metrics = p_eval_step(state, eval_batch, repeat_timesteps)
                     eval_metrics.append(metrics)
                 eval_metrics = common_utils.get_metrics(eval_metrics)
                 summary = jax.tree_util.tree_map(lambda x: x.mean(), eval_metrics)
