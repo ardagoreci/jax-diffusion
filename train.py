@@ -294,7 +294,7 @@ def train_and_evaluate(config: ml_collections.ConfigDict,
                     step + 1, {f'eval_{key}': val for key, val in summary.items()})
                 writer.flush()
             if (step + 1) % steps_per_checkpoint == 0 or step + 1 == num_steps:
-                checkpoints.save_checkpoint(workdir, state)
+                checkpoints.save_checkpoint(workdir, state, step)
 
     # Wait until computations are done before exiting
     jax.random.normal(jax.random.PRNGKey(0), ()).block_until_ready()
