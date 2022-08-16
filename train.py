@@ -159,7 +159,8 @@ def create_train_state(rng,
     Returns:
         the initial train state object.
     """
-    params = initialize(rng, config.image_size, model, local_batch_size=128)
+    params = initialize(rng, config.image_size, model,
+                        local_batch_size=config.batch_size//jax.device_count())
     optimizer = optax.adam(learning_rate_fn)
     opt_state = optimizer.init(params)
     state = TrainState(apply_fn=model.apply,
@@ -221,13 +222,13 @@ def train_and_evaluate(config: ml_collections.ConfigDict,
     # Create input iterators
     train_iter = create_input_iter(name=config.dataset,
                                    split='train',
-                                   batch_size=config.batch_size,
+                                   batch_size=local_batch_size,
                                    image_size=image_size,
                                    cache=config.cache,
                                    dtype=input_dtype)
     test_iter = create_input_iter(name=config.dataset,
                                   split='test',
-                                  batch_size=config.batch_size,
+                                  batch_size=local_batch_size,
                                   image_size=image_size,
                                   cache=config.cache,
                                   dtype=input_dtype)
@@ -268,7 +269,7 @@ def train_and_evaluate(config: ml_collections.ConfigDict,
     train_metrics_last_t = time.time()
     logging.info("Initial compilation, this might take some minutes...")
     for step, batch in zip(range(step_offset, num_steps), train_iter):
-        repeat_timesteps = flax.jax_utils.replicate(jnp.arange(0, config.batch_size))  # TODO: temporary workaround
+        repeat_timesteps = flax.jax_utils.replicate(jnp.arange(0, local_batch_size))  # TODO: temporary workaround
         state, metrics = p_train_step(state, batch, repeat_timesteps)
         for h in hooks:
             h(step)
