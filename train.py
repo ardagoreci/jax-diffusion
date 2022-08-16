@@ -82,10 +82,12 @@ def train_step(state: TrainState,
                batch,
                timesteps) -> TrainState:
     """Perform a single training step."""
+    images = batch[0]
+    labels = batch[1]
 
     def loss_fn(params):
-        logits = state.apply_fn(params, batch.images, timesteps)
-        loss = mean_squared_error(logits, batch.labels)
+        logits = state.apply_fn(params, images, timesteps)
+        loss = mean_squared_error(logits, labels)
         return loss, logits
 
     # Compute gradient
@@ -93,7 +95,7 @@ def train_step(state: TrainState,
     (logits, aux), grads = grad_fn(state.params)
     # Update parameters (all-reduce gradients)
     grads = jax.lax.pmean(grads, axis_name='batch')
-    metrics = compute_metrics(logits, batch.labels)
+    metrics = compute_metrics(logits, labels)
 
     # Update train state
     new_state = state.apply_gradients(grads=grads)
@@ -102,8 +104,10 @@ def train_step(state: TrainState,
 
 def eval_step(state, batch, timesteps):
     """Perform a single evaluation step."""
-    logits = state.apply_fn(state.params, batch.images, timesteps)
-    return compute_metrics(logits, batch.labels)
+    images = batch[0]
+    labels = batch[1]
+    logits = state.apply_fn(state.params, images, timesteps)
+    return compute_metrics(logits, labels)
 
 
 def create_input_iter(name: str,
@@ -132,8 +136,6 @@ def create_input_iter(name: str,
     dataset = input_pipeline.make_denoising_dataset(dataset)
     dataset = dataset.prefetch(tf.data.AUTOTUNE)
     iterator = map(prepare_tf_data, dataset)
-    # iterator = input_pipeline.batch_iterator(iterator)
-    iterator = jax.tree_util.tree_map(lambda x: input_pipeline.Batch(x[0], x[1]), iterator)
     iterator = flax.jax_utils.prefetch_to_device(iterator, size=2)
     return iterator
 
