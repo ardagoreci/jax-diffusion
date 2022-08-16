@@ -243,11 +243,9 @@ def train_and_evaluate(config: ml_collections.ConfigDict,
     # pmap transform train_step and eval_step
     p_train_step = jax.pmap(
         functools.partial(train_step, learning_rate_fn=learning_rate_fn),
-        axis_name='batch',
-        in_axes=(0, 1, None)
+        axis_name='batch'
     )
-    p_eval_step = jax.pmap(eval_step, axis_name='batch',
-                           in_axes=(0, 1, None))
+    p_eval_step = jax.pmap(eval_step, axis_name='batch')
 
     # Create train loop
     train_metrics = []
@@ -259,7 +257,8 @@ def train_and_evaluate(config: ml_collections.ConfigDict,
     for step, batch in zip(range(step_offset, num_steps), train_iter):
         # repeat_timesteps = jnp.repeat(jnp.arange(0, local_batch_size),  # TODO: temporary workaround
         #                              repeats=jax.device_count(), axis=0)
-        state, metrics = p_train_step(state, batch, jnp.arange(0, local_batch_size))
+        repeat_timesteps = flax.jax_utils.replicate(jnp.arange(0, local_batch_size))
+        state, metrics = p_train_step(state, batch, repeat_timesteps)
         for h in hooks:
             h(step)
         if step == step_offset:
@@ -286,7 +285,8 @@ def train_and_evaluate(config: ml_collections.ConfigDict,
                     eval_batch = next(test_iter)
                     # repeat_timesteps = jnp.repeat(jnp.arange(0, local_batch_size),  # TODO: temporary workaround
                     #                              repeats=jax.device_count(), axis=0)
-                    metrics = p_eval_step(state, eval_batch, jnp.arange(0, local_batch_size))
+                    repeat_timesteps = flax.jax_utils.replicate(jnp.arange(0, local_batch_size))
+                    metrics = p_eval_step(state, eval_batch, repeat_timesteps)
                     eval_metrics.append(metrics)
                 eval_metrics = common_utils.get_metrics(eval_metrics)
                 summary = jax.tree_util.tree_map(lambda x: x.mean(), eval_metrics)
