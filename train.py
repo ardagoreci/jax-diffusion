@@ -286,14 +286,13 @@ def train_and_evaluate(config: ml_collections.ConfigDict,
                     f'train_{k}': v
                     for k, v in jax.tree_util.tree_map(lambda x: x.mean(), train_metrics).items()
                 }
-                # summary = summarize_metrics(train_metrics)
                 summary['steps_per_second'] = config.log_every_n_steps / (
                         time.time() - train_metrics_last_t)
+                logging.info(f"Metric summary time: {time.time() - metric_write_t}")
+                # Write scalars to Tensorboard
                 writer.write_scalars(step + 1, summary)
                 train_metrics = []
                 train_metrics_last_t = time.time()
-                metric_write_t = time.time() - metric_write_t
-                summary['metric_write_t'] = metric_write_t
 
             if (step + 1) % steps_per_epoch == 0:
                 epoch = step // steps_per_epoch
