@@ -132,7 +132,8 @@ def create_input_iter(name: str,
     dataset = input_pipeline.make_denoising_dataset(dataset)
     dataset = dataset.prefetch(tf.data.AUTOTUNE)
     iterator = map(prepare_tf_data, dataset)
-    iterator = input_pipeline.batch_iterator(iterator)
+    # iterator = input_pipeline.batch_iterator(iterator)
+    iterator = jax.tree_util.tree_map(lambda x: input_pipeline.Batch(x[0], x[1]))
     iterator = flax.jax_utils.prefetch_to_device(iterator, size=2)
     return iterator
 
