@@ -66,8 +66,8 @@ def _compute_mean_alpha_t(timestep):
     """Computes the mean of the alpha_ts for a given timestep."""
     alpha_array = 1 - DIFFUSION_CONSTANTS  # computes alphas
     log_alphas = jnp.log(alpha_array)  # computes the log for numerical stability
-    s = 0
-    for i in range(timestep+1):
-        s += log_alphas[i]
-    return jnp.exp(s)  # computes the mean of the alphas for a given timestep
 
+    s = jax.lax.dynamic_slice(log_alphas,
+                              start_indices=(0,), slice_sizes=(timestep,))  # computes the slice for the mean
+    mean_alpha_t = jnp.exp(jnp.sum(s))  # TODO: this fails under jit
+    return mean_alpha_t
