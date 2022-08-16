@@ -11,6 +11,7 @@ def get_config():
     config.dataset = 'mnist'
     config.batch_size = 128
     config.try_gcs = True
+    config.cache = True
 
     config.image_size = 32
     config.steps_per_epoch = 60000 // config.batch_size

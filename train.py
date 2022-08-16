@@ -135,7 +135,7 @@ def create_input_iter(name: str,
     dataset = input_pipeline.preprocess_image_dataset(dataset, image_size, dtype=dtype)
     dataset = input_pipeline.make_denoising_dataset(dataset)
     dataset = dataset.prefetch(tf.data.AUTOTUNE)
-    iterator = map(prepare_tf_data, dataset)
+    iterator = jax.tree_util.tree_map(prepare_tf_data, dataset) # trying to see if it relieves the choked pipeline
     iterator = flax.jax_utils.prefetch_to_device(iterator, size=2)
     return iterator
 
