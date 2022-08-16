@@ -221,13 +221,13 @@ def train_and_evaluate(config: ml_collections.ConfigDict,
     # Create input iterators
     train_iter = create_input_iter(name=config.dataset,
                                    split='train',
-                                   batch_size=local_batch_size,
+                                   batch_size=config.batch_size,
                                    image_size=image_size,
                                    cache=config.cache,
                                    dtype=input_dtype)
     test_iter = create_input_iter(name=config.dataset,
                                   split='test',
-                                  batch_size=local_batch_size,
+                                  batch_size=config.batch_size,
                                   image_size=image_size,
                                   cache=config.cache,
                                   dtype=input_dtype)
