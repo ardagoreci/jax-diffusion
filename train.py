@@ -23,6 +23,7 @@ from absl import logging
 
 import input_pipeline
 import unet
+from diffusion_utils import diffuse_image, sample
 
 
 def create_unet(config):
@@ -102,6 +103,45 @@ def train_step(state: TrainState,
     return new_state, metrics
 
 
+def diffusion_train_step(key: jax.random.PRNGKey,
+                         state: TrainState,
+                         batch) -> TrainState:
+    """
+    Perform a single training step for diffusion.
+    Args:
+        key: random key for sampling timesteps
+        state: train state
+        batch: batch of images containing images and epsilons
+    1. Sample timesteps
+    2. Get noised image batch
+    3. Apply model to noised image batch
+    4. Compute (epsilon-epsilon_theta)**2 as loss
+    5. All-reduce gradients
+    6. Update train state
+    """
+    images = batch.images
+    epsilons = batch.epsilons
+    batch_size, *_ = images.shape
+    timesteps = jax.random.randint(key, low=1, high=1000, shape=(batch_size,))  # Diffusion for 1000 steps
+    noised_images = jax.vmap(diffuse_image)(images, epsilons, timesteps)
+
+    def loss_fn(params):
+        epsilon_theta = state.apply_fn(params, noised_images, timesteps)
+        loss = mean_squared_error(logits=epsilon_theta, labels=epsilons)
+        return loss, epsilon_theta
+
+    # Compute gradient
+    grad_fn = jax.value_and_grad(loss_fn, has_aux=True)
+    (epsilon_theta, aux), grads = grad_fn(state.params)
+    # Update parameters (all-reduce gradients)
+    grads = jax.lax.pmean(grads, axis_name='batch')
+    metrics = compute_metrics(epsilon_theta, epsilons)
+
+    # Update train state
+    new_state = state.apply_gradients(grads=grads)
+    return new_state, metrics
+
+
 def eval_step(state, batch, timesteps):
     """Perform a single evaluation step."""
     images = batch[0]
@@ -110,33 +150,46 @@ def eval_step(state, batch, timesteps):
     return compute_metrics(logits, labels)
 
 
+def diffusion_eval_step(key, state, batch):
+    """Perform a single evaluation step for diffusion."""
+    images = batch.images
+    epsilons = batch.epsilons
+    batch_size, *_ = images.shape
+    timesteps = jax.random.randint(key, low=1, high=1000, shape=(batch_size,))  # Diffusion for 1000 steps
+    noised_images = jax.vmap(diffuse_image)(images, epsilons, timesteps)
+    epsilon_theta = state.apply_fn(state.params, noised_images, timesteps)
+    return compute_metrics(epsilon_theta, epsilons)
+
+
 def create_input_iter(name: str,
                       split: str,
-                      batch_size: int,
                       image_size: int,
+                      batch_size: int,
                       cache: bool,
+                      data_dir: str,
                       dtype):
     """Creates an iterator for the given dataset and split.
     Args:
         name: name of the dataset (specified in the config file)
         split: split of the dataset ('train', 'test')
-        batch_size: batch size
         image_size: an integer specifying the size of the input images (not arbitrary
                     given UNet architecture)
+        batch_size: batch size
         cache: whether to cache the dataset in memory
+        data_dir: path to the data directory (for GCS use)
+        dtype: data type of the images ('bfloat16' for TPUs)
     Returns:
         an iterator of Batch named tuples containing the image and labels.
-
-    TODO: this function does not return a dataset for the diffusion task!
-    It is meant to be a test function for the rest.
     """
-    dataset = input_pipeline.create_split(name=name, split=split,
-                                          batch_size=batch_size, cache=cache)
-    dataset = input_pipeline.preprocess_image_dataset(dataset, image_size, dtype=dtype)
-    dataset = input_pipeline.make_denoising_dataset(dataset)
+    dataset = input_pipeline.create_diffusion_dataset(name=name,
+                                                      split=split,
+                                                      image_size=image_size,
+                                                      batch_size=batch_size,
+                                                      cache=cache,
+                                                      data_dir=data_dir,
+                                                      dtype=dtype)
     dataset = dataset.prefetch(tf.data.AUTOTUNE)
     iterator = map(prepare_tf_data, dataset)
-    # iterator = flax.jax_utils.prefetch_to_device(iterator, size=2)
     return iterator
 
 
@@ -162,7 +215,7 @@ def create_train_state(rng,
         the initial train state object.
     """
     params = initialize(rng, config.image_size, model,
-                        local_batch_size=config.batch_size//jax.device_count())
+                        local_batch_size=config.batch_size // jax.device_count())
     optimizer = optax.chain(
         optax.lamb(learning_rate_fn),
         optax.adaptive_grad_clip(config.grad_clip)
@@ -207,12 +260,10 @@ def train_and_evaluate(config: ml_collections.ConfigDict,
     writer = metric_writers.create_default_writer(logdir=workdir,
                                                   just_logging=jax.process_index() != 0)  # TODO: what??
     rng = jax.random.PRNGKey(0)
-    image_size = config.image_size
     # compute local_batch_size (with the appropriate divisibility assertion)
     if config.batch_size % jax.device_count() > 0:
         raise ValueError("Global batch size should be divisible by the number of devices.")
-    local_batch_size = config.batch_size // jax.device_count()  # TODO: what is the difference between process_count
-    # and device_count?
+    local_batch_size = config.batch_size // jax.device_count()
     print(f"Local batch size: {local_batch_size}")
     platform = jax.local_devices()[0].platform
 
@@ -228,13 +279,13 @@ def train_and_evaluate(config: ml_collections.ConfigDict,
     train_iter = create_input_iter(name=config.dataset,
                                    split='train',
                                    batch_size=config.batch_size,
-                                   image_size=image_size,
+                                   image_size=config.image_size,
                                    cache=config.cache,
                                    dtype=input_dtype)
     test_iter = create_input_iter(name=config.dataset,
                                   split='test',
                                   batch_size=config.batch_size,
-                                  image_size=image_size,
+                                  image_size=config.image_size,
                                   cache=config.cache,
                                   dtype=input_dtype)
     # Compute num_train_steps
@@ -246,7 +297,7 @@ def train_and_evaluate(config: ml_collections.ConfigDict,
     steps_per_checkpoint = config.steps_per_checkpoint
 
     if config.steps_per_eval == -1:
-        steps_per_eval = 1000  # TODO: this is hard-coded for now.
+        steps_per_eval = 300  # this is just a number, can be changed with config
     else:
         steps_per_eval = config.steps_per_eval
 
@@ -263,8 +314,8 @@ def train_and_evaluate(config: ml_collections.ConfigDict,
     state = flax.jax_utils.replicate(state)
 
     # pmap transform train_step and eval_step
-    p_train_step = jax.pmap(train_step, axis_name='batch')
-    p_eval_step = jax.pmap(eval_step, axis_name='batch')
+    p_train_step = jax.pmap(diffusion_train_step, axis_name='batch')
+    p_eval_step = jax.pmap(diffusion_eval_step, axis_name='batch')
 
     # Create train loop
     train_metrics = []
@@ -274,15 +325,15 @@ def train_and_evaluate(config: ml_collections.ConfigDict,
     train_metrics_last_t = time.time()
     logging.info("Initial compilation, this might take some minutes...")
     for step, batch in zip(range(step_offset, num_steps), train_iter):
-        repeat_timesteps = flax.jax_utils.replicate(jnp.arange(0, local_batch_size))  # TODO: temporary workaround
-        state, metrics = p_train_step(state, batch, repeat_timesteps)
+        keys = jax.random.split(jax.random.PRNGKey(config.seed + step), jax.device_count())
+        state, metrics = p_train_step(keys, state, batch)
         if step == step_offset:
             logging.info("Initial compilation done.")
         if config.log_every_n_steps:
             train_metrics.append(metrics)
             if (step + 1) % config.log_every_n_steps == 0:
                 metric_write_t = time.time()
-                train_metrics = common_utils.get_metrics(train_metrics)  # TODO: this is problematic with single device!
+                train_metrics = common_utils.get_metrics(train_metrics)
                 summary = {
                     f'train_{k}': v
                     for k, v in jax.tree_util.tree_map(lambda x: x.mean(), train_metrics).items()
@@ -300,8 +351,8 @@ def train_and_evaluate(config: ml_collections.ConfigDict,
                 eval_metrics = []
                 for _ in range(steps_per_eval):
                     eval_batch = next(test_iter)
-                    repeat_timesteps = flax.jax_utils.replicate(jnp.arange(0, local_batch_size))  # TODO: temporary workaround
-                    metrics = p_eval_step(state, eval_batch, repeat_timesteps)
+                    keys = jax.random.split(jax.random.PRNGKey(config.seed + step), jax.device_count())
+                    metrics = p_eval_step(keys, state, eval_batch)
                     eval_metrics.append(metrics)
                 eval_metrics = common_utils.get_metrics(eval_metrics)
                 summary = jax.tree_util.tree_map(lambda x: x.mean(), eval_metrics)
@@ -310,6 +361,7 @@ def train_and_evaluate(config: ml_collections.ConfigDict,
                              epoch, summary['loss'])
                 writer.write_scalars(
                     step + 1, {f'eval_{key}': val for key, val in summary.items()})
+                # TODO: write sampled images to Tensorboard
                 writer.flush()
             if (step + 1) % steps_per_checkpoint == 0 or step + 1 == num_steps:
                 save_checkpoint(workdir, state)
