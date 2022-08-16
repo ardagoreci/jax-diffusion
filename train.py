@@ -123,7 +123,7 @@ def create_input_iter(name: str,
 
 
 def save_checkpoint(workdir, state):
-    state = jax.device_get(jax.tree_util.tree_map(lambda x: x[0], state))
+    # state = jax.device_get(jax.tree_util.tree_map(lambda x: x[0], state)) TODO: problematic with single GPU
     step = int(state.step)
     checkpoints.save_checkpoint(workdir, target=state, step=step, keep=3)
 
