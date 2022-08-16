@@ -107,6 +107,31 @@ def make_denoising_dataset(dataset):
     return dataset
 
 
+def create_diffusion_dataset(name: str,
+                             split: str,
+                             image_size: int,
+                             shuffle: bool = False,
+                             batch_size: int = 128,
+                             cache: bool = False,
+                             data_dir=None,
+                             dtype: str = 'float32'):
+    """Creates the dataset for the diffusion model.
+    """
+    dataset = create_split(name=name,
+                           split=split,
+                           shuffle=shuffle,
+                           batch_size=batch_size,
+                           data_dir=data_dir,
+                           cache=cache)
+    dataset = preprocess_image_dataset(dataset, image_size, dtype)
+
+    def _epsilon_label(images, labels):
+        epsilon = tf.random.normal(shape=images.shape, mean=0.0, stddev=1.0)
+        return images, epsilon
+    dataset = dataset.map(_epsilon_label)
+    return dataset
+
+
 def convert2iterator(ds):
     ds = ds.map(lambda x, y: Batch(x, y))
     return iter(tfds.as_numpy(ds))
