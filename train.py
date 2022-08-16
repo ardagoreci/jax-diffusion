@@ -280,6 +280,7 @@ def train_and_evaluate(config: ml_collections.ConfigDict,
         if config.log_every_n_steps:
             train_metrics.append(metrics)
             if (step + 1) % config.log_every_n_steps == 0:
+                metric_write_t = time.time()
                 train_metrics = common_utils.get_metrics(train_metrics)  # TODO: this is problematic with single device!
                 summary = {
                     f'train_{k}': v
@@ -291,6 +292,8 @@ def train_and_evaluate(config: ml_collections.ConfigDict,
                 writer.write_scalars(step + 1, summary)
                 train_metrics = []
                 train_metrics_last_t = time.time()
+                metric_write_t = time.time() - metric_write_t
+                summary['metric_write_t'] = metric_write_t
 
             if (step + 1) % steps_per_epoch == 0:
                 epoch = step // steps_per_epoch
