@@ -144,12 +144,11 @@ def create_train_state(rng,
     """
     params = initialize(rng, image_size, model, local_batch_size=128)
     optimizer = optax.adam(learning_rate_fn)
-    step = 0
     opt_state = optimizer.init(params)
     state = TrainState(apply_fn=model.apply,
                        params=params,
                        tx=optimizer,
-                       step=step,
+                       step=0,
                        opt_state=opt_state)
     return state
 
@@ -163,6 +162,9 @@ def summarize_metrics(metrics):
                 summary[key] = value
             else:
                 summary[key] += value
+    # Average metrics
+    for key, value in summary.items():
+        summary[key] = value / len(metrics)
     return summary
 
 

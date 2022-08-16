@@ -11,21 +11,6 @@ from abc import abstractmethod
 from typing import Collection
 
 
-class AttentionPool2d(nn.Module):
-    spacial_dim: int
-    embed_dim: int
-    num_head_channels: int
-    output_dim: int = None
-
-    def setup(self):
-        # TODO: implement initialization
-        pass
-
-    def __call__(self, x):
-        # TODO: implement attention pooling
-        pass
-
-
 class TimeStepBlock(nn.Module):
     """
     Any module where __call__ takes timestep embeddings as a second argument.
@@ -492,7 +477,6 @@ class UNetModel(nn.Module):
         return self.out(h)
 
 
-
 class AttentionBlock(nn.Module):
     """
     An attention block that allows spatial positions to attend to each other.
@@ -529,23 +513,9 @@ class AttentionBlock(nn.Module):
         return (x + h).reshape(B, *spatial, C)
 
 
-class QKVAttentionLegacy(nn.Module):
-    """
-    A module which performs QKV attention. Matches legacy QKVAttention + input/output heads shaping
-    """
-    num_heads: int
-
-    @nn.compact
-    def __call__(self, q, k, v):
-        pass
-
-
 class QKVAttention(nn.Module):
     """
-    A module which performs QKV attention and splits in a different order.
-
-    Note: I do not understand the need for two different attention modules.
-    This might be avoided upstream by using better array handling.
+    A module which performs QKV attention.
     """
     num_heads: int = 1
 
@@ -568,7 +538,7 @@ class QKVAttention(nn.Module):
         v = jnp.squeeze(v, axis=1)
 
         # Attention
-        return jax.vmap(QKVAttention._forward)(q, k, v)
+        return jax.vmap(self._forward)(q, k, v)
 
     @staticmethod
     def _forward(q, k, v) -> jnp.ndarray:
@@ -579,15 +549,15 @@ class QKVAttention(nn.Module):
             v: the value tensor (H, T, d_model)
         where H is the number of heads, T is the number of elements that attend to each other
         and C is d_model
-        Returns: a value tensor of shape (T * H, d_model) after attention. This tensor will be
-        convolved with a 1x1 convolutional layer to recover the original shape (T, d_model) upstream.
+        Returns: a value tensor of shape (T, d_model) after attention
 
         This function does not take into account the batch dimension. It will be vmap
         transformed to do so.
         (unit-tested)
         """
         headed_v = jax.vmap(QKVAttention.scaled_dot_product_attention)(q, k, v)  # (H, T, d_model/num_heads)
-        # Merge the heads to recover v with dims (T, d_model).
+
+        # Merge the heads
         v_prime = jnp.concatenate(headed_v, axis=0)  # (T * num_heads, d_model)
         return v_prime
 
