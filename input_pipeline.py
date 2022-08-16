@@ -52,7 +52,8 @@ def create_split(name: str,
                  split: str,
                  shuffle: bool = False,
                  batch_size: int = 128,
-                 cache: bool = False) -> tf.data.Dataset:
+                 cache: bool = False,
+                 try_gcs=True) -> tf.data.Dataset:
     """Creates an iterator over the dataset.
     Args:
       name: Name of the dataset.
@@ -60,6 +61,7 @@ def create_split(name: str,
       shuffle: Whether to shuffle the dataset.
       batch_size: The batch size.
       cache: Whether to cache the dataset.
+      try_gcs: Whether to try to load the dataset from GCS. (for running on TPUs)
 
     Returns:
       A batched dataset.
@@ -67,7 +69,8 @@ def create_split(name: str,
     ds = tfds.load(name,
                    split=split,
                    shuffle_files=shuffle,
-                   as_supervised=True)
+                   as_supervised=True,
+                   try_gcs=try_gcs)
     if cache:
         ds = ds.cache()
     ds = ds.repeat()

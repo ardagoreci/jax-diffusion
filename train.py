@@ -77,7 +77,7 @@ def train_step(state: TrainState,
     grad_fn = jax.value_and_grad(loss_fn, has_aux=True)
     (logits, aux), grads = grad_fn(state.params)
     # Update parameters (all-reduce gradients)
-    # grads = jax.lax.pmean(grads)
+    grads = jax.lax.pmean(grads)
     metrics = compute_metrics(logits, batch.labels)
 
     # Update train state
@@ -229,7 +229,6 @@ def train_and_evaluate(config: ml_collections.ConfigDict,
         steps_per_eval = config.steps_per_eval
 
     # Create model
-    # model = create_unet(rng, config, image_size, local_batch_size)
     model = create_unet(config)
     # Create learning rate function
     learning_rate_fn = create_learning_rate_fn(config)
@@ -241,14 +240,12 @@ def train_and_evaluate(config: ml_collections.ConfigDict,
     step_offset = int(state.step)  # 0 usually
     # state = flax.jax_utils.replicate(state)
     # pmap transform train_step and eval_step
-    # p_train_step = jax.pmap(
-    #    functools.partial(train_step, learning_rate_fn=learning_rate_fn),
-    #    axis_name='batch'
-    # )
-    # p_eval_step = jax.pmap(eval_step, axis_name='batch')
+    p_train_step = jax.pmap(
+        functools.partial(train_step, learning_rate_fn=learning_rate_fn),
+        axis_name='batch'
+    )
+    p_eval_step = jax.pmap(eval_step, axis_name='batch')
 
-    p_train_step = jax.jit(train_step)
-    p_eval_step = jax.jit(eval_step)
     # p_train_step = (train_step)
     # p_eval_step = (eval_step)
     # Create train loop
@@ -267,12 +264,12 @@ def train_and_evaluate(config: ml_collections.ConfigDict,
         if config.log_every_n_steps:
             train_metrics.append(metrics)
             if (step + 1) % config.log_every_n_steps == 0:
-                # train_metrics = common_utils.get_metrics(train_metrics)  # TODO: this is problematic with single device!
-                # summary = {
-                #    f'train_{k}': v
-                #    for k, v in jax.tree_util.tree_map(lambda x: x.mean(), train_metrics).items()
-                # }
-                summary = summarize_metrics(train_metrics)
+                train_metrics = common_utils.get_metrics(train_metrics)  # TODO: this is problematic with single device!
+                summary = {
+                    f'train_{k}': v
+                    for k, v in jax.tree_util.tree_map(lambda x: x.mean(), train_metrics).items()
+                }
+                # summary = summarize_metrics(train_metrics)
                 summary['steps_per_second'] = config.log_every_n_steps / (
                         time.time() - train_metrics_last_t)
                 writer.write_scalars(step + 1, summary)
@@ -286,9 +283,9 @@ def train_and_evaluate(config: ml_collections.ConfigDict,
                     eval_batch = next(test_iter)
                     metrics = p_eval_step(state, eval_batch, jnp.arange(0, local_batch_size))
                     eval_metrics.append(metrics)
-                # eval_metrics = common_utils.get_metrics(eval_metrics)
-                # summary = jax.tree_util.tree_map(lambda x: x.mean(), eval_metrics)
-                summary = summarize_metrics(eval_metrics)
+                eval_metrics = common_utils.get_metrics(eval_metrics)
+                summary = jax.tree_util.tree_map(lambda x: x.mean(), eval_metrics)
+                # summary = summarize_metrics(eval_metrics)
                 logging.info('eval epoch: %d, loss: %.4f',
                              epoch, summary['loss'])
                 writer.write_scalars(
