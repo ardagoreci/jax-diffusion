@@ -10,6 +10,9 @@ T = 1000  # Number of time steps for the diffusion process
 DIFFUSION_CONSTANTS = jnp.linspace(start=10**(-4),  # defines the diffusion constants as specified in (Ho et al., 2020)
                                    stop=0.02,
                                    num=T)
+alpha_array = 1 - DIFFUSION_CONSTANTS  # computes alphas
+log_alphas = jnp.log(alpha_array)  # computes the log for numerical stability
+MEAN_ALPHA_T = jnp.exp(jnp.cumsum(log_alphas))  # computes the mean of the alpha_ts for a given timestep
 
 
 def diffuse_image(image, timestep, epsilon) -> jnp.ndarray:
@@ -30,7 +33,7 @@ def diffuse_image(image, timestep, epsilon) -> jnp.ndarray:
     Note: this function is written for a single example. It is assumed
     that the pmap transformation will be used to apply it to the entire batch.
     """
-    mean_alpha_t = _compute_mean_alpha_t(timestep)
+    mean_alpha_t = MEAN_ALPHA_T[timestep]
     x_t = image*jnp.sqrt(mean_alpha_t) + jnp.sqrt(1-mean_alpha_t)*epsilon  # computes x_t
     return x_t
 
@@ -55,19 +58,10 @@ def sample(key, params, model, initial_noise):
             z = 0
         epsilon_theta = model.apply(params, x_t, jnp.repeat(t, batch_size))
         alpha_t = 1-DIFFUSION_CONSTANTS[t]
-        mean_alpha_t = _compute_mean_alpha_t(t)
+        mean_alpha_t = MEAN_ALPHA_T[t]
         # Denoise according to the formula in the paper
         sigma_t = jnp.sqrt(DIFFUSION_CONSTANTS[t])
         x_t = 1/alpha_t*(x_t - (1-alpha_t)/(jnp.sqrt(1-mean_alpha_t))*epsilon_theta) + z*sigma_t
     return x_t
 
 
-def _compute_mean_alpha_t(timestep):
-    """Computes the mean of the alpha_ts for a given timestep."""
-    alpha_array = 1 - DIFFUSION_CONSTANTS  # computes alphas
-    log_alphas = jnp.log(alpha_array)  # computes the log for numerical stability
-
-    s = jax.lax.dynamic_slice(log_alphas,
-                              start_indices=(0,), slice_sizes=(timestep,))  # computes the slice for the mean
-    mean_alpha_t = jnp.exp(jnp.sum(s))  # TODO: this fails under jit
-    return mean_alpha_t
