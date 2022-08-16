@@ -92,7 +92,7 @@ def train_step(state: TrainState,
     grad_fn = jax.value_and_grad(loss_fn, has_aux=True)
     (logits, aux), grads = grad_fn(state.params)
     # Update parameters (all-reduce gradients)
-    grads = jax.lax.pmean(grads)
+    grads = jax.lax.pmean(grads, axis_name='batch')
     metrics = compute_metrics(logits, batch.labels)
 
     # Update train state
