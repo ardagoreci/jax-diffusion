@@ -258,10 +258,7 @@ def train_and_evaluate(config: ml_collections.ConfigDict,
     state = flax.jax_utils.replicate(state)
 
     # pmap transform train_step and eval_step
-    p_train_step = jax.pmap(
-        functools.partial(train_step, learning_rate_fn=learning_rate_fn),
-        axis_name='batch'
-    )
+    p_train_step = jax.pmap(train_step, axis_name='batch')
     p_eval_step = jax.pmap(eval_step, axis_name='batch')
 
     # Create train loop
