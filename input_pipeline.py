@@ -50,6 +50,7 @@ def load_dataset(name: str,
 
 def create_split(name: str,
                  split: str,
+                 data_dir: str,
                  shuffle: bool = False,
                  batch_size: int = 128,
                  cache: bool = False,
@@ -62,6 +63,7 @@ def create_split(name: str,
       batch_size: The batch size.
       cache: Whether to cache the dataset.
       try_gcs: Whether to try to load the dataset from GCS. (for running on TPUs)
+      data_dir: The directory to load the dataset from (GCS directory)
 
     Returns:
       A batched dataset.
@@ -70,6 +72,7 @@ def create_split(name: str,
                    split=split,
                    shuffle_files=shuffle,
                    as_supervised=True,
+                   data_dir=data_dir,
                    try_gcs=try_gcs)
     if cache:
         ds = ds.cache()

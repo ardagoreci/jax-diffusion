@@ -15,9 +15,12 @@ def get_config():
     config.data_dir = 'gs://tfds-data/datasets/'
 
     config.image_size = 32
+
+    # Training hyperparameters
     config.steps_per_epoch = 60000 // config.batch_size
     config.steps_per_eval = 10000 // config.batch_size
     config.steps_per_checkpoint = 300
+    config.num_steps = 5000  # for CelebA HQ, 500_000 steps were used
 
     # Optimizer
     config.learning_rate = 0.1
