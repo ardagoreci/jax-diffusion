@@ -23,7 +23,7 @@ def get_config():
     config.num_steps = 5000  # for CelebA HQ, 500_000 steps were used
 
     # Optimizer
-    config.learning_rate = 0.1
+    config.learning_rate = 1e-4
     config.grad_clip = 0.012
 
     # Model hyperparameters

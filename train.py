@@ -216,10 +216,7 @@ def create_train_state(rng,
     """
     params = initialize(rng, config.image_size, model,
                         local_batch_size=config.batch_size // jax.device_count())
-    optimizer = optax.chain(
-        optax.lamb(learning_rate_fn),
-        optax.adaptive_grad_clip(config.grad_clip)
-    )
+    optimizer = optax.adam(learning_rate_fn)
     opt_state = optimizer.init(params)
     state = TrainState(apply_fn=model.apply,
                        params=params,
