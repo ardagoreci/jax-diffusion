@@ -117,7 +117,7 @@ def create_input_iter(name: str,
     dataset = input_pipeline.preprocess_image_dataset(dataset, image_size, dtype=dtype)
     dataset = input_pipeline.make_denoising_dataset(dataset)
     dataset = dataset.prefetch(tf.data.AUTOTUNE)
-    iterator = map(prepare_tf_data)
+    iterator = map(prepare_tf_data, dataset)
     # iterator = input_pipeline.convert2iterator(dataset)
     # TODO: there is an issue with the prefetch.
     iterator = flax.jax_utils.prefetch_to_device(iterator, size=2)
