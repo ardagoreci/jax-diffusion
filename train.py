@@ -100,7 +100,6 @@ def train_step(state: TrainState,
     return new_state, metrics
 
 
-@jax.jit
 def eval_step(state, batch, timesteps):
     """Perform a single evaluation step."""
     logits = state.apply_fn(state.params, batch.images, timesteps)
@@ -206,7 +205,7 @@ def train_and_evaluate(config: ml_collections.ConfigDict,
     # compute local_batch_size (with the appropriate divisibility assertion)
     if config.batch_size % jax.device_count() > 0:
         raise ValueError("Global batch size should be divisible by the number of devices.")
-    local_batch_size = config.batch_size // jax.process_count()  # TODO: what is the difference between process_count
+    local_batch_size = config.batch_size // jax.device_count()  # TODO: what is the difference between process_count
     # and device_count?
     print(f"Local batch size: {local_batch_size}")
     platform = jax.local_devices()[0].platform
