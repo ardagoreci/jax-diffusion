@@ -122,7 +122,7 @@ def diffusion_train_step(key: jax.random.PRNGKey,
     images = batch[0]
     epsilons = batch[1]
     batch_size, *_ = images.shape
-    timesteps = jax.random.randint(key, low=1, high=1000, shape=(batch_size,))  # Diffusion for 1000 steps
+    timesteps = jax.random.randint(key, minval=1, maxval=1000, shape=(batch_size,))  # Diffusion for 1000 steps
     noised_images = jax.vmap(diffuse_image)(images, epsilons, timesteps)
 
     def loss_fn(params):
@@ -155,7 +155,7 @@ def diffusion_eval_step(key, state, batch):
     images = batch[0]
     epsilons = batch[1]
     batch_size, *_ = images.shape
-    timesteps = jax.random.randint(key, low=1, high=1000, shape=(batch_size,))  # Diffusion for 1000 steps
+    timesteps = jax.random.randint(key, minval=1, maxval=1000, shape=(batch_size,))  # Diffusion for 1000 steps
     noised_images = jax.vmap(diffuse_image)(images, epsilons, timesteps)
     epsilon_theta = state.apply_fn(state.params, noised_images, timesteps)
     return compute_metrics(epsilon_theta, epsilons)
