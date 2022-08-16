@@ -272,11 +272,9 @@ def train_and_evaluate(config: ml_collections.ConfigDict,
     logging.info("Initial compilation, this might take some minutes...")
     for step, batch in zip(range(step_offset, num_steps), train_iter):
         repeat_timesteps = flax.jax_utils.replicate(jnp.arange(0, local_batch_size))  # TODO: temporary workaround
-        state, metrics = p_train_step(state, batch, repeat_timesteps)
-        hooks_time = time.time()
-        for h in hooks:
-            h(step)
-        logging.info(f"Hooks took {time.time() - hooks_time} seconds")
+        actual_compute_time = time.time()
+        state, metrics = p_train_step(state, batch, repeat_timesteps).block_until_ready()
+        logging.info(f"Compute time: {time.time() - actual_compute_time}")
         if step == step_offset:
             logging.info("Initial compilation done.")
         if config.log_every_n_steps:
