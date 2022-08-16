@@ -12,6 +12,7 @@ def get_config():
     config.batch_size = 128
     config.try_gcs = True
     config.cache = True
+    config.data_dir = 'gs://tfds-data/datasets/'
 
     config.image_size = 32
     config.steps_per_epoch = 60000 // config.batch_size

@@ -231,7 +231,6 @@ def create_train_state(rng,
 
 def summarize_metrics(metrics):
     """Summarizes the metrics."""
-    # TODO: this method might be choking the training loop
     summary = {}
     for metric in metrics:
         for key, value in metric.items():
