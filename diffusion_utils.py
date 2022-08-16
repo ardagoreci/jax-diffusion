@@ -66,5 +66,8 @@ def _compute_mean_alpha_t(timestep):
     """Computes the mean of the alpha_ts for a given timestep."""
     alpha_array = 1 - DIFFUSION_CONSTANTS  # computes alphas
     log_alphas = jnp.log(alpha_array)  # computes the log for numerical stability
-    mean_alpha_t = jnp.exp(jnp.sum(log_alphas[:timestep + 1]))  # sum is equivalent to multiplying under log, then revert
-    return mean_alpha_t
+    s = 0
+    for i in range(timestep+1):
+        s += log_alphas[i]
+    return jnp.exp(s)  # computes the mean of the alphas for a given timestep
+
