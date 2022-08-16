@@ -113,7 +113,7 @@ def convert2iterator(ds):
 
 
 def batch_iterator(it):
-    return map(lambda x, y: Batch(x, y), it)
+    return map(lambda x: Batch(x[0], x[1]), it)
 
 
 def prepare_tf_data(xs):
