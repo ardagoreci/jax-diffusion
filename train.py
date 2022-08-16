@@ -115,6 +115,7 @@ def create_input_iter(name: str,
     dataset = input_pipeline.create_split(name=name, split=split,
                                           batch_size=batch_size, cache=cache)
     dataset = input_pipeline.preprocess_image_dataset(dataset, image_size, dtype=dtype)
+    dataset = input_pipeline.make_denoising_dataset(dataset)
     iterator = input_pipeline.convert2iterator(dataset)
     # TODO: there is an issue with the prefetch.
     # iterator = flax.jax_utils.prefetch_to_device(iterator, size=2)
@@ -130,7 +131,6 @@ def save_checkpoint(state, workdir):
 def create_train_state(rng,
                        config: ml_collections.ConfigDict,
                        model,
-                       image_size,
                        learning_rate_fn):
     """
     Creates the initial train state object.
@@ -143,7 +143,7 @@ def create_train_state(rng,
     Returns:
         the initial train state object.
     """
-    params = initialize(rng, image_size, model, local_batch_size=128)
+    params = initialize(rng, config.image_size, model, local_batch_size=128)
     optimizer = optax.adam(learning_rate_fn)
     opt_state = optimizer.init(params)
     state = TrainState(apply_fn=model.apply,
@@ -156,6 +156,7 @@ def create_train_state(rng,
 
 def summarize_metrics(metrics):
     """Summarizes the metrics."""
+    # TODO: this method might be chocking the training loop
     summary = {}
     for metric in metrics:
         for key, value in metric.items():
@@ -233,7 +234,7 @@ def train_and_evaluate(config: ml_collections.ConfigDict,
     # Create learning rate function
     learning_rate_fn = create_learning_rate_fn(config)
     # Create train_state
-    state = create_train_state(rng, config, model, image_size, learning_rate_fn)
+    state = create_train_state(rng, config, model, learning_rate_fn)
     # restore checkpoint
     state = checkpoints.restore_checkpoint(workdir, state)
     # step_offset > 0 if we are resuming training
@@ -294,7 +295,7 @@ def train_and_evaluate(config: ml_collections.ConfigDict,
                     step + 1, {f'eval_{key}': val for key, val in summary.items()})
                 writer.flush()
             if (step + 1) % steps_per_checkpoint == 0 or step + 1 == num_steps:
-                checkpoints.save_checkpoint(workdir, state, step)
+                save_checkpoint(workdir, state)
 
     # Wait until computations are done before exiting
     jax.random.normal(jax.random.PRNGKey(0), ()).block_until_ready()

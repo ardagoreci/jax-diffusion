@@ -95,6 +95,15 @@ def preprocess_image_dataset(dataset, image_size: int,
     return dataset
 
 
+def make_denoising_dataset(dataset):
+    def corrupt(images, labels):
+        noise = tf.random.normal(shape=images.shape, mean=0.0, stddev=0.5)
+        noised = images + noise
+        return noised, images
+    dataset = dataset.map(corrupt)
+    return dataset
+
+
 def convert2iterator(ds):
     ds = ds.map(lambda x, y: Batch(x, y))
     return iter(tfds.as_numpy(ds))
