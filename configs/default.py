@@ -30,4 +30,7 @@ def get_config():
     config.num_res_blocks = 3
     config.attention_resolutions = ()
     config.channel_mult = (1, 2, 4, 8)
+    config.num_heads = 1
+    config.num_head_channels = -1
+
     return config

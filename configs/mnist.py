@@ -11,7 +11,7 @@ def get_config():
     config.dataset = 'mnist'
     config.batch_size = 1024
     config.try_gcs = True
-    config.cache = True
+    config.cache = False
     config.data_dir = 'gs://tfds-data/datasets/'
 
     config.image_size = 32
