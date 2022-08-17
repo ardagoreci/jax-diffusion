@@ -24,8 +24,8 @@ def get_config():
     config.learning_rate = 1e-4
     config.grad_clip = 0.012
     config.model_channels = 128
-    config.in_channels = 1
-    config.out_channels = 1
+    config.in_channels = 3
+    config.out_channels = 3
     config.num_res_blocks = 2
     config.num_heads = 2
     config.attention_resolutions = (32, 16, 8)
