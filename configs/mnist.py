@@ -9,7 +9,7 @@ def get_config():
     """Get the hyperparameter configuration for training on MNIST"""
     config = default_config.get_config()
     config.dataset = 'mnist'
-    config.batch_size = 128
+    config.batch_size = 1024
     config.try_gcs = True
     config.cache = True
     config.data_dir = 'gs://tfds-data/datasets/'
@@ -19,9 +19,9 @@ def get_config():
     # Training hyperparameters
     config.steps_per_epoch = 60000 // config.batch_size
     config.steps_per_eval = 10000 // config.batch_size
-    config.steps_per_checkpoint = 300
-    config.num_steps = 5000  # for CelebA HQ, 500_000 steps were used
-
+    config.steps_per_checkpoint = 200
+    config.num_steps = 10000  # for CelebA HQ, 500_000 steps were used
+    # config.steps_per_eval = 100
     # Optimizer
     config.learning_rate = 1e-4
     config.grad_clip = 0.012
