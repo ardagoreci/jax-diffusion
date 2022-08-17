@@ -19,16 +19,15 @@ def get_config():
     # Training hyperparameters
     config.steps_per_epoch = 60000 // config.batch_size
     config.steps_per_eval = 10000 // config.batch_size
-    config.steps_per_checkpoint = 200
-    config.num_steps = 10000  # for CelebA HQ, 500_000 steps were used
+    config.steps_per_checkpoint = 60000 // config.batch_size  # save a checkpoint every epoch
+    config.num_steps = 100_000  # for CelebA HQ, 500_000 steps were used
     # config.steps_per_eval = 100
-    # Optimizer
-    config.learning_rate = 1e-4
-    config.grad_clip = 0.012
+
 
     # Model hyperparameters
-    config.learning_rate = 1e-4
-    config.model_channels = 16
+    config.learning_rate = 3e-4
+    config.grad_clip = 0.012
+    config.model_channels = 64
     config.in_channels = 1
     config.out_channels = 1
     config.num_res_blocks = 2
