@@ -14,9 +14,9 @@ def get_config():
     config.image_size = 128
 
     # Training hyperparameters
-    config.steps_per_epoch = 100
-    config.steps_per_eval = 20_000 // config.batch_size
-    config.steps_per_checkpoint = 100  # save a checkpoint every epoch
+    config.steps_per_epoch = 200
+    config.steps_per_eval = 20
+    config.steps_per_checkpoint = 200  # save a checkpoint every epoch
     config.num_steps = 500_000  # for CelebA HQ, 500_000 steps were used
     # config.steps_per_eval = 100
 
