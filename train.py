@@ -193,9 +193,10 @@ def create_input_iter(name: str,
     return iterator
 
 
-def save_checkpoint(workdir, state, metric):
+def save_checkpoint(workdir, state):
     state = jax.device_get(jax.tree_util.tree_map(lambda x: x[0], state))
-    checkpoints.save_checkpoint(workdir, target=state, step=metric, keep=3)
+    step = int(state.step)
+    checkpoints.save_checkpoint(workdir, target=state, step=step, keep=3)
 
 
 def create_train_state(rng,
@@ -359,7 +360,7 @@ def train_and_evaluate(config: ml_collections.ConfigDict,
                 # TODO: write sampled images to Tensorboard
                 writer.flush()
             # if (step + 1) % steps_per_checkpoint == 0 or step + 1 == num_steps:
-                save_checkpoint(workdir, state, metric=eval_metrics['loss'])  # TODO: save checkpoint with eval loss
+                save_checkpoint(workdir, state)  # TODO: save checkpoint with eval loss
 
     # Wait until computations are done before exiting
     jax.random.normal(jax.random.PRNGKey(0), ()).block_until_ready()
