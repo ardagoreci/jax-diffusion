@@ -128,11 +128,11 @@ def diffusion_train_step(key: jax.random.PRNGKey,
     def loss_fn(params):
         epsilon_theta = state.apply_fn(params, noised_images, timesteps)
         loss = mean_squared_error(logits=epsilon_theta, labels=epsilons)
-        return loss, epsilon_theta
+        return loss
 
     # Compute gradient
     grad_fn = jax.value_and_grad(loss_fn)
-    (mse, epsilon_pred), grads = grad_fn(state.params)  # TODO: something may be wrong here with the order of aux
+    mse, grads = grad_fn(state.params)  # TODO: something may be wrong here with the order of aux
     # Update parameters (all-reduce gradients)
     grads = jax.lax.pmean(grads, axis_name='batch')
     metrics = {'loss': mse}
