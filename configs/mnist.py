@@ -27,7 +27,7 @@ def get_config():
     # Model hyperparameters
     config.learning_rate = 3e-4
     config.grad_clip = 0.012
-    config.model_channels = 64
+    config.model_channels = 16
     config.in_channels = 1
     config.out_channels = 1
     config.num_res_blocks = 2
