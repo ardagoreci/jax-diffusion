@@ -447,8 +447,7 @@ class UNetModel(nn.Module):
             jax.nn.silu,
             nn.Conv(features=self.out_channels,
                     kernel_size=tuple([3 for i in range(self.dims)]),
-                    padding='SAME'),
-            jax.nn.tanh,
+                    padding='SAME')
         ])
 
         # self.input_blocks
