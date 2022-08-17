@@ -52,7 +52,7 @@ def sample(key, params, model, initial_noise):
     x_t = initial_noise
     for t in range(T, 1, -1):
         if t > 1:
-            key = jax.random.split(key, 1)[0] # get new key
+            key = jax.random.split(key, 1)[0]  # get new key
             z = jax.random.normal(key, shape=initial_noise.shape) # sample z from Gaussian
         else:
             z = 0
@@ -61,7 +61,7 @@ def sample(key, params, model, initial_noise):
         mean_alpha_t = MEAN_ALPHA_T[t]
         # Denoise according to the formula in the paper
         sigma_t = jnp.sqrt(DIFFUSION_CONSTANTS[t])
-        x_t = 1/alpha_t*(x_t - (1-alpha_t)/(jnp.sqrt(1-mean_alpha_t))*epsilon_theta) + z*sigma_t
+        x_t = 1/jnp.sqrt(alpha_t)*(x_t - (1-alpha_t)/(jnp.sqrt(1-mean_alpha_t))*epsilon_theta) + z*sigma_t
     return x_t
 
 
