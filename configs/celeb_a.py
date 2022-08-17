@@ -8,7 +8,7 @@ def get_config():
     """Get the hyperparameter configuration for training on MNIST"""
     config = default_config.get_config()
     config.dataset = 'celeb_a'
-    config.batch_size = 64
+    config.batch_size = 256
     config.cache = False
     config.data_dir = 'gs://celeb-a-diffusion'
     config.image_size = 128
@@ -23,12 +23,12 @@ def get_config():
     # Model hyperparameters
     config.learning_rate = 1e-4
     config.grad_clip = 0.012
-    config.model_channels = 256
+    config.model_channels = 128
     config.in_channels = 1
     config.out_channels = 1
     config.num_res_blocks = 2
     config.num_heads = 2
-    config.attention_resolutions = (16, 8)
+    config.attention_resolutions = (32, 16, 8)
     config.channel_mult = (1, 2, 4, 8)
 
     # Seed for reproducibility
