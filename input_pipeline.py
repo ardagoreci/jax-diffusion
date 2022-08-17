@@ -67,8 +67,7 @@ def preprocess_image_dataset(dataset, image_size: int,
     """
 
     def resize(images, labels):
-        images = tf.image.resize(images, [image_size, image_size],
-                                 preserve_aspect_ratio=True)
+        images = tf.image.resize(images, [image_size, image_size])
         return images, labels
 
     def normalize(images, labels):
