@@ -8,7 +8,7 @@ def get_config():
     """Get the hyperparameter configuration for training on MNIST"""
     config = default_config.get_config()
     config.dataset = 'celeb_a'
-    config.batch_size = 256
+    config.batch_size = 128
     config.cache = False
     config.data_dir = 'gs://celeb-a-diffusion'
     config.image_size = 128
