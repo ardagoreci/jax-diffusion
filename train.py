@@ -131,11 +131,11 @@ def diffusion_train_step(key: jax.random.PRNGKey,
         return loss, epsilon_theta
 
     # Compute gradient
-    grad_fn = jax.value_and_grad(loss_fn, has_aux=True)
-    (epsilon_theta, aux), grads = grad_fn(state.params)
+    grad_fn = jax.value_and_grad(loss_fn)
+    loss, grads = grad_fn(state.params)  # TODO: something may be wrong here with the order of aux
     # Update parameters (all-reduce gradients)
     grads = jax.lax.pmean(grads, axis_name='batch')
-    metrics = compute_metrics(epsilon_theta, epsilons)
+    metrics = {'loss': loss}
 
     # Update train state
     new_state = state.apply_gradients(grads=grads)
@@ -330,7 +330,6 @@ def train_and_evaluate(config: ml_collections.ConfigDict,
         if config.log_every_n_steps:
             train_metrics.append(metrics)
             if (step + 1) % config.log_every_n_steps == 0:
-                metric_write_t = time.time()
                 train_metrics = common_utils.get_metrics(train_metrics)
                 summary = {
                     f'train_{k}': v
@@ -338,7 +337,6 @@ def train_and_evaluate(config: ml_collections.ConfigDict,
                 }
                 summary['steps_per_second'] = config.log_every_n_steps / (
                         time.time() - train_metrics_last_t)
-                logging.info(f"Metric summary time: {time.time() - metric_write_t}")
                 # Write scalars to Tensorboard
                 writer.write_scalars(step + 1, summary)
                 train_metrics = []
