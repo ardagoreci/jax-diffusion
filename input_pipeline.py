@@ -32,17 +32,26 @@ def create_split(name: str,
     Returns:
       A batched dataset.
     """
-    ds = tfds.load(name,
-                   split=split,
-                   shuffle_files=shuffle,
-                   as_supervised=True,
-                   data_dir=data_dir)
+    # TODO: temporary workaround, find a more elegant solution
     if name == 'celeb_a':
+        ds = tfds.load(name,
+                       split=split,
+                       shuffle_files=shuffle,
+                       data_dir=data_dir)
+
         def map_fn(feature_dict):
             image = feature_dict['image']
             label = tf.ones((1,))
             return image, label
+
         ds = ds.map(map_fn)
+    else:
+        ds = tfds.load(name,
+                       split=split,
+                       shuffle_files=shuffle,
+                       as_supervised=True,
+                       data_dir=data_dir)
+
     if cache:
         ds = ds.cache()
     ds = ds.repeat()
@@ -56,6 +65,7 @@ def preprocess_image_dataset(dataset, image_size: int,
     Normalizes images with the ResNet preprocessing function to [-1, 1]
     and resizes them to the specified size.
     """
+
     def resize(images, labels):
         images = tf.image.resize(images, [image_size, image_size])
         return images, labels
@@ -75,6 +85,7 @@ def make_denoising_dataset(dataset):
         noise = tf.random.normal(shape=images.shape, mean=0.0, stddev=1.0)
         noised = images + noise
         return noised, images
+
     dataset = dataset.map(corrupt)
     return dataset
 
@@ -100,6 +111,7 @@ def create_diffusion_dataset(name: str,
     def _epsilon_label(images, labels):
         epsilon = tf.random.normal(shape=images.shape, mean=0.0, stddev=1.0)
         return images, epsilon
+
     dataset = dataset.map(_epsilon_label)
     return dataset
 
