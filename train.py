@@ -362,7 +362,7 @@ def train_and_evaluate(config: ml_collections.ConfigDict,
                 # TODO: write sampled images to Tensorboard
                 writer.flush()
             # if (step + 1) % steps_per_checkpoint == 0 or step + 1 == num_steps:
-                save_checkpoint(workdir, state[0])  # TODO: save checkpoint with eval loss
+                save_checkpoint(workdir, flax.jax_utils.unreplicate(state))  # TODO: save checkpoint with eval loss
 
     # Wait until computations are done before exiting
     jax.random.normal(jax.random.PRNGKey(0), ()).block_until_ready()
