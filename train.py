@@ -310,7 +310,7 @@ def train_and_evaluate(config: ml_collections.ConfigDict,
     # restore checkpoint
     state = checkpoints.restore_checkpoint(workdir, state)
     # step_offset > 0 if we are resuming training
-    step_offset = int(state.step)  # 0 usually
+    step_offset = int(state.step) + 1  # 0 usually
     state = flax.jax_utils.replicate(state)
 
     # pmap transform train_step and eval_step
@@ -327,7 +327,7 @@ def train_and_evaluate(config: ml_collections.ConfigDict,
     for step, batch in zip(range(step_offset, num_steps), train_iter):
         keys = jax.random.split(jax.random.PRNGKey(config.seed + step), jax.device_count())
         state, metrics = p_train_step(keys, state, batch)
-        if step == step_offset:
+        if step + 1 == step_offset:
             logging.info("Initial compilation done.")
         if config.log_every_n_steps:
             train_metrics.append(metrics)
