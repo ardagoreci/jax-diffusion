@@ -17,8 +17,7 @@ def get_config():
     config.steps_per_epoch = 200
     config.steps_per_eval = 20  # 20 steps per eval
     config.steps_per_checkpoint = 200  # save a checkpoint every epoch
-    config.num_steps = 500_000  # for CelebA HQ, 500_000 steps were used
-    # config.steps_per_eval = 100
+    config.num_train_steps = 500_000  # for CelebA HQ, 500_000 steps were used
 
     # Model hyperparameters
     config.learning_rate = 1e-5
