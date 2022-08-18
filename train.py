@@ -196,8 +196,8 @@ def create_input_iter(name: str,
 
 
 def save_checkpoint(workdir, state):
-    state = jax.device_get(jax.tree_util.tree_map(lambda x: x[0], state))
-    step = int(state.step[0])
+    state = jax.device_get(state)
+    step = int(state.step)
     checkpoints.save_checkpoint(workdir, target=state, step=step, keep=3)
 
 
